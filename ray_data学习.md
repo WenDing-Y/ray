@@ -53,7 +53,7 @@ ds.write_parquet("s3://bucket/output/")
 
 简化后的执行架构：
 
-![Ray Data 简化执行架构](images/screenshot-20261023-111725.png)
+![Ray Data 简化执行架构](https://raw.githubusercontent.com/WenDing-Y/ray/work/images/screenshot-20261023-111725.png)
 
 概念示意：各算子可在不同节点并发执行；实际物理算子可能经过融合优化。
 
