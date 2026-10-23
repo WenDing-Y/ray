@@ -261,3 +261,106 @@ ds.write_parquet("s3://bucket/output/")
 `TokenizerWorker.__call__` 的输入格式需要与 `batch_format` 匹配，使用具体库时应显式选择合适的格式。
 
 值得记住：`map_batches()` 不只是减少 Python 函数调用次数。对于 Tokenizer 或模型推理，它还可能把多个输入合并成一次底层批量运算，这通常才是显著提升吞吐量的关键。
+
+## 第三题：Ray Data 的数据流水线（Pipeline）如何执行？
+
+Ray Data 把大规模数据组织成多个 **Block**，通过 **Operator** 定义处理阶段，由 **Streaming Executor** 协调，再交给 Ray 的 **Task / Actor** 分布式执行。
+
+核心机制是：**惰性构建计划，消费触发计算，数据块在各阶段之间流水线流动。** 这里的 Pipeline 指处理流水线，不特指旧版的 `DatasetPipeline` API。
+
+### 一、从代码到执行计划
+
+```python
+import ray
+
+# clean_text、is_valid 和 TokenizeBatch 需要自行实现。
+# TokenizeBatch 是可调用类，其输入应与 batch_format 匹配。
+ds = ray.data.read_json("s3://bucket/raw/*.jsonl")
+ds = ds.map(clean_text)
+ds = ds.filter(is_valid)
+ds = ds.map_batches(
+    TokenizeBatch,
+    batch_size=1000,
+    batch_format="numpy",
+    concurrency=4,
+)
+ds.write_parquet("s3://bucket/output/")
+```
+
+整个流水线的逻辑如下：
+
+![Ray Data 数据流水线逻辑](https://raw.githubusercontent.com/WenDing-Y/ray/work/images/screenshot-20261023-114345.png)
+
+图中展示的是逻辑处理顺序，并不要求全部 Block 完成一个阶段后才能进入下一阶段。
+
+执行过程可以概括为：
+
+1. **构建逻辑计划**：描述 Read → Map → Filter → MapBatches → Write 等操作。转换通常不会立即处理完整数据集，但数据源和元数据查询可能提前产生工作。
+2. **触发执行**：`write_parquet()` 等消费或输出操作启动所需计算。`take()`、迭代 `iter_batches()`、`materialize()` 等也会触发计算；部分查询可能利用元数据完成。
+3. **生成并优化物理计划**：把逻辑操作映射为物理算子，按规则进行融合等优化。
+4. **调度执行**：Executor 为可执行算子提供输入，算子提交 Task 或 Actor 调用，Ray 运行时安排实际执行位置。
+5. **传递结果**：上游产生的 Block 引用交给下游，最终写入目标存储。
+
+### 二、流式执行：不同数据块同时处于不同阶段
+
+不需要等全部数据读取完才开始清洗，也不需要等全部清洗完才开始分词。同一时刻可能出现：
+
+| 数据块 | 当前进度 |
+| --- | --- |
+| Block 1 | 正在 Tokenize |
+| Block 2 | 正在 Filter |
+| Block 3 | 正在读取或清洗 |
+
+这是逻辑示意，实际 Map、Filter 等操作可能融合在同一任务内。排序、全局聚合等需要跨分片协调的操作也可能形成阶段性等待。
+
+Streaming Executor 持续收集任务输出、更新算子队列，并结合资源预算和背压决定哪些算子可以继续接收输入。**Streaming 在这里主要指有界数据的流水线执行，不代表 Flink 式无界事件流及其 Watermark、窗口和状态 Checkpoint 语义。**
+
+### 三、Operator、Task、Worker 的分工
+
+| 概念 | 职责 |
+| --- | --- |
+| Physical Operator | 执行控制单元，组织输入、输出、任务及执行状态 |
+| Task / Actor | 实际执行用户函数；Actor 可跨调用保留初始化状态 |
+| Worker | 运行 Task 或 Actor 的进程 |
+| Block | 被处理和传递的数据分片 |
+| Streaming Executor | 协调物理算子的执行进度、资源使用与背压 |
+
+物理算子通常不是独立的 Worker 进程。一个计算算子可以管理多个 Task 或 Actor；一条流水线也不等于一个 Task。
+
+**算子融合（Operator Fusion）** 可以把相邻的 Map、Filter 等兼容操作合并执行，减少任务调度、中间数据物化和传输开销。因此，代码中的三个转换不一定对应三个独立的物理阶段。
+
+### 四、背压：下游慢时限制上游
+
+假设读取速度为 100 Blocks/s，Tokenize 只能处理 10 Blocks/s，中间结果就可能积压。
+
+Ray Data 通过背压限制上游任务提交或数据输出，避免中间数据无限增长。Object Store 内存紧张时，还可能通过 **Spilling** 将对象溢写到磁盘。
+
+背压和 Spilling 不能保证不会 OOM：Worker 堆内存、模型临时对象、GPU 显存和磁盘容量仍然需要单独关注。
+
+### 五、Block 如何从上游传到下游？
+
+以存放在 Object Store 中的普通大型 Block 为例：
+
+1. 上游 Worker 产生数据，Ray 将结果存入所在 **Ray Node 的 Object Store**。
+2. Executor 在算子间传递 **ObjectRef 和元数据**，无需先把整个 Block 拉回 Driver。
+3. 下游任务需要数据时，Ray 运行时负责定位对象；若本节点没有所需对象，则按需跨节点传输。
+4. 数据就绪后，下游 Worker 从本地对象存储读取并处理。
+
+| 场景 | 网络传输 | Worker 读取 |
+| --- | --- | --- |
+| 同一个 Ray Node 内的不同 Worker | 通常无需网络搬运 | 支持零拷贝的 Arrow / NumPy 缓冲区可共享读取 |
+| 不同 Ray Node 首次消费 | 通常需要传输并建立本地副本 | 到达后再从本地读取 |
+| 目标节点已有可用副本 | 可复用，不必重复传输 | 本地读取 |
+
+**传递 ObjectRef 不等于复制整个 Block，也不会把数据广播到所有节点。** 零拷贝读取不能消除跨节点网络传输；Python 对象反序列化、格式转换和修改只读数组仍可能分配额外内存。小对象内联、溢写恢复等路径与上述简化过程有所不同。
+
+在 Kubernetes 中，不同 Ray Pod 通常属于不同 Ray Node，各自拥有独立的 Object Store。即使两个 Pod 在同一台物理机器，也不会自动共享同一个对象存储。
+
+### 六、性能优化关注点
+
+- **减少中间数据**：业务语义允许时先过滤无效记录、移除无用字段，再进行昂贵计算。
+- **利用算子融合和数据本地性**：减少中间物化及跨节点传输，同时兼顾资源利用率；具体放置受调度策略和 Actor 所在节点影响。
+- **调整 Block、Batch 和并发**：过大可能增加内存压力，过小可能放大调度开销；三者不是同一个参数。
+- **用指标验证**：通过执行后的 `ds.stats()`、Ray Dashboard 和对象存储指标定位瓶颈。
+
+记住这条链路即可：**Dataset 描述计划 → Executor 协调 Operator → Task / Actor 在 Worker 中处理 Block → Object Store 保存中间对象 → 下游按需获取并继续处理。**
