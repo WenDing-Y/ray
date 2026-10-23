@@ -539,3 +539,87 @@ Pending 不一定只因 CPU 不够，资源空闲也可能无法满足某项约�
 6. **控制变量复测**：一次只改少量变量，在同一数据集和可比资源下重复测量，并区分冷启动与稳定运行。
 
 增加 Worker 不一定能提高吞吐量：S3、下游写入、固定 Actor 数量或不可拆分的长尾任务，都可能让新增 CPU 闲置。
+
+## 第六题：Ray Object Store 是什么？
+
+**Object Store 是每个 Ray Node 上用于存放和共享对象的存储系统。** 同节点 Worker 可共享数据，跨节点由 Ray 运行时按需传输对象。Ray 的大型共享对象通常使用基于 Plasma 的共享内存存储。
+
+对于 Ray Data，可以理解为：**上游 Task 产生 Block → Object Store 保存 → 下游 Task 按引用获取并处理**。相邻算子可能融合，并不保证每一步都物化出独立 Block。
+
+### 一、同节点共享，跨节点传输
+
+![Ray Object Store 同节点共享与跨节点传输](images/ray-data-object-store.svg)
+
+- 每个 Ray Node 拥有自己的 Object Store，不同节点不直接共享同一块物理内存。
+- 同节点 Worker 读取支持零拷贝的 NumPy / Arrow 缓冲区时，可以共享底层数据。
+- 跨节点消费通常需要网络传输，目标节点保存对象副本，Worker 再从本地读取。已有可用副本时可复用。
+- `ObjectRef` 是引用，不是对象数据；传递引用不等于复制对象或广播数据。
+
+图中是普通大型共享对象的典型路径；小对象内联、溢写恢复等情况有所不同。
+
+### 二、示例：两个 Task 读取同一个数组
+
+```python
+import numpy as np
+import ray
+
+ray.init()
+
+# 80,000,000 字节，约 80 MB（76.3 MiB）。
+data = np.ones(10_000_000, dtype=np.float64)
+ref = ray.put(data)
+
+@ray.remote
+def process(arr):
+    return arr.sum()
+
+a = process.remote(ref)
+b = process.remote(ref)
+print(ray.get([a, b]))  # [10000000.0, 10000000.0]
+```
+
+`ray.put()` 将数组放入 Object Store，返回引用。作为顶层任务参数传入 `ref` 时，Ray 会解析依赖，`process()` 接收到的是数组。
+
+如果两个 Task 在对象所在节点执行，可以共享读取同一份数组，不必为每个 Worker 复制一份。这个示例没有固定任务位置，实际是否发生跨节点传输取决于调度。
+
+注意两个边界：
+
+- **零拷贝不适用于所有对象。** 普通 Python 对象通常需要反序列化，格式转换也可能分配新内存。
+- **共享对象不可原地修改。** 从 Object Store 读取的 NumPy 数组通常只读；需要修改时先 `arr.copy()`，得到 Worker 内的可写副本，再按需输出新对象。最初 `ray.put()` 前的本地数组不等于共享对象本身。
+
+### 三、Ray Data 中的使用
+
+```python
+# transform 需要自行实现。
+ds = ray.data.read_parquet("s3://bucket/input/")
+ds = ds.map_batches(transform)
+ds.write_parquet("s3://bucket/output/")
+```
+
+未融合时，可用下面的概念链路理解：
+
+```text
+Read Task → Block A → MapBatches Task → Block B → Write Task
+               ↑                          ↑
+         Object Store 中的输入      Object Store 中的输出
+```
+
+产生新结果时，Block A 和 Block B 是不同的逻辑对象，但部分底层缓冲区可能共享；不能据此断言每次转换都会完整复制数据。算子融合还可能省去中间结果的独立物化。
+
+### 四、Object Store 与 Worker Heap
+
+| 对比 | Object Store | Worker Heap |
+| --- | --- | --- |
+| 主要内容 | 共享 Ray 对象、Ray Data Block | Python 对象、模型、临时计算结果 |
+| 共享范围 | 同节点多个 Worker 可读取同一对象 | 通常属于单个进程 |
+| 零拷贝 | 支持部分数据类型的共享读取 | 转换或计算仍可能产生额外分配 |
+| 内存不足 | 符合条件的对象可 Spilling 到磁盘 | 可能导致 Worker OOM |
+| 排查重点 | 中间工作集、引用保留、溢写与恢复 | Batch、模型大小、临时对象及并发 |
+
+**Spilling 只缓解对象存储压力，不能代替 Worker 堆或 GPU 显存管理。** 大量溢写和恢复会增加磁盘 I/O；对象被使用或固定时也不保证随时能释放，仍可能遇到内存或磁盘不足。
+
+### 五、KubeRay 中的边界
+
+如果 Head Pod 和两个 Worker Pod 各运行一个 Ray Node，它们通常各有独立的 Object Store。
+
+即使两个 Pod 位于同一台 Kubernetes 物理节点，也不会自动合并对象存储。Pod 内的 Worker 可共享本节点对象；跨 Ray Node 获取对象仍需要对象传输，不能视为同节点共享内存读取。
