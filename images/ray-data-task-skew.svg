@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="720" viewBox="0 0 1100 720" role="img" aria-labelledby="title desc">
+  <title id="title">Ray Data：均衡任务与长尾任务对比</title>
+  <desc id="desc">相同的九个任务分配到三个 Worker。均衡情况下每个任务耗时两秒，六秒完成；倾斜情况下一个任务耗时十秒，作业需要等到十二秒。时间线仅为简化示意。</desc>
+  <rect width="1100" height="720" rx="20" fill="#f8fafc"/>
+  <g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+    <text x="50" y="53" font-size="28" font-weight="700" fill="#0f172a">动态调度能分配任务，但不能自动拆分运行中的慢任务</text>
+    <text x="50" y="87" font-size="16" fill="#64748b">示意：3 个 Worker、9 个独立 Task；横向长度表示耗时，不表示数据量</text>
+    <rect x="35" y="112" width="1030" height="237" rx="14" fill="white" stroke="#cbd5e1"/>
+    <text x="58" y="146" font-size="22" font-weight="700" fill="#0f172a">均衡：每个 Task 耗时 2 秒</text>
+    <g font-size="16" fill="#475569">
+      <text x="58" y="194">Worker A</text><text x="58" y="242">Worker B</text><text x="58" y="290">Worker C</text>
+    </g>
+    <g fill="#dbeafe" stroke="#93c5fd">
+      <rect x="170" y="170" width="130" height="34" rx="5"/><rect x="310" y="170" width="130" height="34" rx="5"/><rect x="450" y="170" width="130" height="34" rx="5"/>
+      <rect x="170" y="218" width="130" height="34" rx="5"/><rect x="310" y="218" width="130" height="34" rx="5"/><rect x="450" y="218" width="130" height="34" rx="5"/>
+      <rect x="170" y="266" width="130" height="34" rx="5"/><rect x="310" y="266" width="130" height="34" rx="5"/><rect x="450" y="266" width="130" height="34" rx="5"/>
+    </g>
+    <g font-size="15" text-anchor="middle" fill="#1e40af">
+      <text x="235" y="193">T1</text><text x="375" y="193">T4</text><text x="515" y="193">T7</text>
+      <text x="235" y="241">T2</text><text x="375" y="241">T5</text><text x="515" y="241">T8</text>
+      <text x="235" y="289">T3</text><text x="375" y="289">T6</text><text x="515" y="289">T9</text>
+    </g>
+    <text x="620" y="236" font-size="22" fill="#15803d" font-weight="700">6 秒完成</text>
+    <path d="M170 315H1010" stroke="#94a3b8"/>
+    <g font-size="13" fill="#64748b" text-anchor="middle"><text x="170" y="336">0s</text><text x="310" y="336">2s</text><text x="450" y="336">4s</text><text x="590" y="336">6s</text><text x="730" y="336">8s</text><text x="870" y="336">10s</text><text x="1010" y="336">12s</text></g>
+    <rect x="35" y="365" width="1030" height="237" rx="14" fill="white" stroke="#cbd5e1"/>
+    <text x="58" y="399" font-size="22" font-weight="700" fill="#0f172a">倾斜：T5 耗时 10 秒，其余仍为 2 秒</text>
+    <g font-size="16" fill="#475569"><text x="58" y="447">Worker A</text><text x="58" y="495">Worker B</text><text x="58" y="543">Worker C</text></g>
+    <g fill="#dbeafe" stroke="#93c5fd">
+      <rect x="170" y="423" width="130" height="34" rx="5"/><rect x="310" y="423" width="130" height="34" rx="5"/><rect x="450" y="423" width="130" height="34" rx="5"/><rect x="590" y="423" width="130" height="34" rx="5"/>
+      <rect x="170" y="471" width="130" height="34" rx="5"/>
+      <rect x="170" y="519" width="130" height="34" rx="5"/><rect x="310" y="519" width="130" height="34" rx="5"/><rect x="450" y="519" width="130" height="34" rx="5"/>
+    </g>
+    <rect x="310" y="471" width="700" height="34" rx="5" fill="#ffedd5" stroke="#fb923c"/>
+    <g fill="#f1f5f9" stroke="#cbd5e1" stroke-dasharray="5 4"><rect x="730" y="423" width="280" height="34" rx="5"/><rect x="590" y="519" width="420" height="34" rx="5"/></g>
+    <g font-size="15" text-anchor="middle" fill="#1e40af">
+      <text x="235" y="446">T1</text><text x="375" y="446">T4</text><text x="515" y="446">T7</text><text x="655" y="446">T9</text><text x="235" y="494">T2</text>
+      <text x="235" y="542">T3</text><text x="375" y="542">T6</text><text x="515" y="542">T8</text>
+    </g>
+    <text x="660" y="494" font-size="16" text-anchor="middle" fill="#9a3412" font-weight="700">T5：慢任务持续运行，直到 12 秒结束</text>
+    <g font-size="15" fill="#64748b" text-anchor="middle"><text x="870" y="446">空闲，等待 T5</text><text x="800" y="542">空闲，等待 T5</text></g>
+    <path d="M170 568H1010" stroke="#94a3b8"/>
+    <g font-size="13" fill="#64748b" text-anchor="middle"><text x="170" y="589">0s</text><text x="310" y="589">2s</text><text x="450" y="589">4s</text><text x="590" y="589">6s</text><text x="730" y="589">8s</text><text x="870" y="589">10s</text><text x="1010" y="589">12s</text></g>
+    <text x="50" y="646" font-size="20" fill="#0f172a" font-weight="700">关键：有空闲 Worker，也不代表能把运行中的 T5 分给它们。</text>
+    <text x="50" y="681" font-size="16" fill="#64748b">任务分配仅为示意；实际运行受调度、资源和数据本地性影响。本图忽略调度与传输开销。</text>
+  </g>
+</svg>
