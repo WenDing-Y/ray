@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="800" viewBox="0 0 1100 800" role="img" aria-label="Ray Data Pipeline 性能排查流程">
+<rect width="1100" height="800" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+<text x="45" y="50" font-size="28" fill="#0f172a" font-weight="700" text-anchor="start">Pipeline 变慢：先定位瓶颈，再针对原因优化</text>
+<rect x="210" y="80" width="680" height="75" rx="12" fill="#dbeafe" stroke="#93c5fd"/>
+<text x="550" y="110" font-size="21" fill="#0f172a" font-weight="700" text-anchor="middle">① 建立基线，定位限制吞吐量的 Operator</text>
+<text x="550" y="138" font-size="17" fill="#475569" font-weight="400" text-anchor="middle">Read / Clean / Filter / Tokenize / Write</text>
+<path d="M550 155V182m-5 -7 5 7 5 -7" fill="none" stroke="#64748b" stroke-width="2"/>
+<rect x="210" y="190" width="680" height="75" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="550" y="220" font-size="21" fill="#0f172a" font-weight="700" text-anchor="middle">② 联合观察任务、数据与资源</text>
+<text x="550" y="248" font-size="17" fill="#475569" font-weight="400" text-anchor="middle">stats · Dashboard · 日志 · 队列 · CPU / GPU · Object Store</text>
+<path d="M550 265V293m-5 -7 5 7 5 -7" fill="none" stroke="#64748b" stroke-width="2"/>
+<rect x="40" y="315" width="500" height="115" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="60" y="346" font-size="21" fill="#0f172a" font-weight="700" text-anchor="start">CPU 低 / Pending</text>
+<text x="60" y="379" font-size="18" fill="#475569" font-weight="400" text-anchor="start">检查资源请求、并发、输入供给</text>
+<text x="60" y="407" font-size="18" fill="#475569" font-weight="400" text-anchor="start">再检查 I/O、阻塞和下游背压</text>
+<rect x="560" y="315" width="500" height="115" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="580" y="346" font-size="21" fill="#0f172a" font-weight="700" text-anchor="start">CPU 高 / UDF 慢</text>
+<text x="580" y="379" font-size="18" fill="#475569" font-weight="400" text-anchor="start">检查计算效率、向量化</text>
+<text x="580" y="407" font-size="18" fill="#475569" font-weight="400" text-anchor="start">检查线程竞争、模型初始化</text>
+<rect x="40" y="450" width="500" height="115" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="60" y="481" font-size="21" fill="#0f172a" font-weight="700" text-anchor="start">内存高 / Spilling</text>
+<text x="60" y="514" font-size="18" fill="#475569" font-weight="400" text-anchor="start">检查 Block、Batch、工作集</text>
+<text x="60" y="542" font-size="18" fill="#475569" font-weight="400" text-anchor="start">区分 Worker 堆与对象存储</text>
+<rect x="560" y="450" width="500" height="115" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="580" y="481" font-size="21" fill="#0f172a" font-weight="700" text-anchor="start">少数 Task 特别慢</text>
+<text x="580" y="514" font-size="18" fill="#475569" font-weight="400" text-anchor="start">检查样本长度、Block 大小</text>
+<text x="580" y="542" font-size="18" fill="#475569" font-weight="400" text-anchor="start">检查慢节点及 I/O 长尾</text>
+<path d="M550 565V605m-5 -7 5 7 5 -7" fill="none" stroke="#64748b" stroke-width="2"/>
+<rect x="130" y="615" width="840" height="85" rx="12" fill="#dcfce7" stroke="#86efac"/>
+<text x="550" y="649" font-size="21" fill="#0f172a" font-weight="700" text-anchor="middle">③ 一次调整少量变量，在相同数据与资源下重新测量</text>
+<text x="550" y="680" font-size="18" fill="#166534" font-weight="400" text-anchor="middle">比较总耗时、有效吞吐量、资源峰值与成本</text>
+<text x="45" y="747" font-size="18" fill="#64748b" font-weight="400" text-anchor="start">注意：症状只是线索；被背压的上游算子不一定是瓶颈。</text>
+</g></svg>

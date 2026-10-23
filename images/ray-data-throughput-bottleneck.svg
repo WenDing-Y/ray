@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="510" viewBox="0 0 1100 510" role="img" aria-label="示例：Tokenize 限制流水线吞吐量">
+<rect width="1100" height="510" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+<text x="45" y="50" font-size="27" fill="#0f172a" font-weight="700" text-anchor="start">找吞吐瓶颈，不把各阶段累计耗时直接相加</text>
+<text x="45" y="83" font-size="17" fill="#64748b" font-weight="400" text-anchor="start">假设各阶段记录数基本不变；以下均为示例处理能力，不是实际测量</text>
+<text x="45" y="145" font-size="19" fill="#0f172a" font-weight="400" text-anchor="start">Read</text>
+<rect x="180" y="120" width="541.6666666666667" height="34" rx="5" fill="#93c5fd"/>
+<text x="736.6666666666667" y="144" font-size="17" fill="#334155" font-weight="400" text-anchor="start">100,000 条/秒</text>
+<text x="45" y="201" font-size="19" fill="#0f172a" font-weight="400" text-anchor="start">Clean</text>
+<rect x="180" y="176" width="433.3333333333333" height="34" rx="5" fill="#93c5fd"/>
+<text x="628.3333333333333" y="200" font-size="17" fill="#334155" font-weight="400" text-anchor="start">80,000 条/秒</text>
+<text x="45" y="257" font-size="19" fill="#0f172a" font-weight="400" text-anchor="start">Filter</text>
+<rect x="180" y="232" width="650.0" height="34" rx="5" fill="#93c5fd"/>
+<text x="845.0" y="256" font-size="17" fill="#334155" font-weight="400" text-anchor="start">120,000 条/秒</text>
+<text x="45" y="313" font-size="19" fill="#0f172a" font-weight="700" text-anchor="start">Tokenize</text>
+<rect x="180" y="288" width="108.33333333333333" height="34" rx="5" fill="#fb923c"/>
+<text x="303.3333333333333" y="312" font-size="17" fill="#9a3412" font-weight="700" text-anchor="start">20,000 条/秒</text>
+<text x="45" y="369" font-size="19" fill="#0f172a" font-weight="400" text-anchor="start">Write</text>
+<rect x="180" y="344" width="325.0" height="34" rx="5" fill="#93c5fd"/>
+<text x="520.0" y="368" font-size="17" fill="#334155" font-weight="400" text-anchor="start">60,000 条/秒</text>
+<rect x="40" y="419" width="1020" height="60" rx="12" fill="#ffedd5" stroke="#fdba74"/>
+<text x="60" y="445" font-size="18" fill="#0f172a" font-weight="700" text-anchor="start">此例整体上限约为 20,000 条/秒；增加上游 CPU 不会自动突破 Tokenize 的能力。</text>
+<text x="60" y="468" font-size="16" fill="#64748b" font-weight="400" text-anchor="start">实际比较必须考虑过滤率、数据膨胀、阶段重叠及计量单位。</text>
+</g></svg>

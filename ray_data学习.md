@@ -426,3 +426,116 @@ Tokenize 时，Block B 可能远慢于 Block A。因此，行数、字节数和�
 **减小 Batch 不等于增加 Task 数量，也不保证消除长尾。** 一个 Task 可能连续处理多个 Batch；只有批次或任务划分真正改变了工作分配，才可能改善负载均衡。
 
 对于大规模 LLM 数据预处理，优先沿着 **数据量是否均衡 → 计算耗时是否均衡 → 资源利用是否均衡** 排查；文本长度造成的计算倾斜，通常值得重点关注。
+
+## 第五题：Ray Data Pipeline 执行缓慢，如何系统排查？
+
+**先定位限制吞吐量的 Operator，再判断计算、数据、调度、资源或 I/O 原因，最后针对瓶颈优化并重新测量。** 不要一开始就增加 Worker 或修改所有参数。
+
+### 一、排查全流程
+
+![Ray Data Pipeline 性能排查流程](https://raw.githubusercontent.com/WenDing-Y/ray/work/images/ray-data-performance-triage.svg)
+
+对于 1TB JSONL → 清洗 → Tokenize → Parquet，优先关注 Task 耗时、Block 分布、CPU/GPU 利用率、Object Store、Spilling 和背压。
+
+### 二、定位哪个 Operator 限制整体吞吐量
+
+```python
+import ray
+
+# clean_text、is_valid、Tokenize 需要自行实现。
+# Tokenize 是可调用类，接收 NumPy 格式批次。
+ds = ray.data.read_json("s3://bucket/input/")
+ds = ds.map(clean_text)
+ds = ds.filter(is_valid)
+ds = ds.map_batches(
+    Tokenize,
+    batch_size=1000,
+    batch_format="numpy",
+    concurrency=4,
+)
+ds.write_parquet("s3://bucket/output/")
+print(ds.stats())
+```
+
+| 逻辑阶段 | 优先检查 |
+| --- | --- |
+| ReadJSON | S3 吞吐、文件数量与大小、读取并行度、JSON 解析开销 |
+| Map(clean_text) | Python 逐行开销、正则等 UDF 计算 |
+| Filter(is_valid) | 判断成本、过滤比例、下游实际输入量 |
+| MapBatches(Tokenize) | Tokenizer 效率、Batch、Actor 并发、线程竞争 |
+| WriteParquet | 编码与压缩、S3 写入、输出文件数量 |
+
+实际物理算子可能融合，不一定与表中的逻辑步骤一一对应。流式执行时，各阶段可以重叠；**算子累计 Task 耗时不能直接相加作为作业总耗时**，累计值甚至可能大于作业墙钟时间。
+
+![流水线吞吐瓶颈示例](https://raw.githubusercontent.com/WenDing-Y/ray/work/images/ray-data-throughput-bottleneck.svg)
+
+比较处理能力时，需要统一口径。过滤后的输出条数较少、Tokenize 后数据体积变大，都可能使直接比较各阶段“条/秒”产生误判。
+
+### 三、监控工具与关键指标
+
+#### 1. ds.stats() 与日志
+
+在消费或输出操作执行后检查 `ds.stats()`。需要更详细的统计时，在执行前设置：
+
+```python
+from ray.data import DataContext
+
+DataContext.get_current().verbose_stats_logs = True
+```
+
+结合执行进度条、Ray 会话日志中的 `ray-data.log` 和 Worker 日志观察。具体指标名称、可见范围及采集方式随版本和配置变化，写出操作的完整信息也应结合 Dashboard 和日志检查。
+
+| 指标或观察项 | 用途 |
+| --- | --- |
+| Remote wall time | 比较任务执行墙钟耗时及长尾 |
+| Remote CPU time | 判断任务消耗的 CPU 时间；多线程情况下可能超过墙钟时间 |
+| UDF time | 判断用户函数是否主导计算成本 |
+| Output block size / rows | 检查输出分片大小、行数与数据膨胀 |
+| Peak heap memory | 观察 Worker 堆内存压力，不等于 Object Store 或 GPU 显存 |
+| Tasks per node | 检查任务数量分布，需结合节点性能和任务耗时解释 |
+| 队列、Spilling、吞吐量 | 检查上下游失衡、对象存储压力和 I/O 成本 |
+
+例如任务耗时 `min=1s、max=120s、mean=5s`，说明存在明显长尾，但仍要检查是异常样本、数据倾斜、慢节点还是 I/O。
+
+若相同口径下墙钟耗时远高于 CPU 时间，可优先检查 I/O、阻塞或设备等待；不能仅凭这一点就断定是调度或背压。任务启动前的 Pending 时间，应单独从任务状态和时间线观察；GPU 工作也不会直接体现为 CPU 消耗。
+
+#### 2. Ray Dashboard
+
+Kubernetes 环境中，可按实际命名空间和 Head Service 名称执行：
+
+```bash
+kubectl -n <namespace> port-forward svc/<ray-head-service> 8265:8265
+```
+
+在浏览器打开 `http://localhost:8265`，结合当前版本可用的 Jobs / Ray Data、Cluster、Tasks 和 Metrics 页面观察：
+
+- 算子进度、输入输出队列与吞吐量。
+- 实际 CPU/GPU 利用率、内存和节点分布；Ray 声明或分配的逻辑资源不等于实际使用率。
+- Task 的 Running、Pending、失败、重试和长尾情况。
+- Object Store、Spilling、磁盘及网络 I/O。
+
+进度条中的 `[backpressure]` 表示算子受到下游消费或缓冲限制，**不一定是该算子本身慢**。应顺着流水线检查下游和资源预算。
+
+### 四、按症状缩小范围
+
+| 症状 | 优先检查 | 可能的优化方向 |
+| --- | --- | --- |
+| CPU 低 | 输入是否充足、并发是否受限、I/O 或设备等待 | 改善供给、读取并行度或批处理，确认瓶颈后调整并发 |
+| CPU 高 | UDF 计算、线程竞争、序列化 | 向量化、批量调用、减少重复工作、控制库线程数 |
+| 内存持续增长 | Worker 堆、Object Store、GPU 显存分别增长多少 | 控制工作集、Batch、Block 和并发，排查缓存或泄漏 |
+| 少数 Task 特别慢 | 样本长度、输入字节数、节点和 I/O 差异 | 分流异常样本、调整任务粒度、检查慢节点 |
+| 大量 Pending | CPU/GPU/自定义资源请求、节点标签、Actor 放置及集群容量 | 修正不可满足的资源请求或放置约束，必要时扩容 |
+| Spilling 严重 | 中间对象工作集、下游速度、对象引用保留、磁盘性能 | 减少中间数据、控制并发与分块、改善内存或磁盘配置 |
+
+Pending 不一定只因 CPU 不够，资源空闲也可能无法满足某项约束；Spilling 也不一定都是错误，但大量溢写与恢复可能显著拖慢执行。
+
+### 五、优化顺序与验证
+
+1. **建立基线**：记录总耗时、输入量、有效输出量、吞吐量、资源峰值与成本。
+2. **定位瓶颈**：结合算子统计、任务时间线和日志，确认限制整体吞吐量的阶段。
+3. **检查工作分配**：观察任务粒度、Block/Batch、Pending、并发和数据倾斜。
+4. **优化 UDF 与初始化**：批量 Tokenize、向量化；需要复用昂贵初始化时使用可调用类 Actor，避免每批加载模型。
+5. **检查存储与网络**：关注 S3、输出文件数量、对象传输、Spilling 和磁盘吞吐。
+6. **控制变量复测**：一次只改少量变量，在同一数据集和可比资源下重复测量，并区分冷启动与稳定运行。
+
+增加 Worker 不一定能提高吞吐量：S3、下游写入、固定 Actor 数量或不可拆分的长尾任务，都可能让新增 CPU 闲置。
