@@ -187,7 +187,7 @@ python experiments/ray_cpu_test.py --address auto --output /tmp/ray_cpu_output
 
 可调用类配合 `concurrency=2` 创建两个计算 Actor，反复处理输入；`num_cpus=1` 为每个 Actor 声明 1 个逻辑 CPU，不限制整个作业的 CPU 用量。
 
-![两个 Actor 与多次任务调用](images/ray-core-actor-task-count.svg)
+![两个 Actor 与多次任务调用](https://cdn.jsdelivr.net/gh/WenDing-Y/ray@5cc415ade7/images/ray-core-actor-task-count.svg)
 
 [单独查看图片](https://github.com/WenDing-Y/ray/blob/work/images/ray-core-actor-task-count.svg)
 
@@ -226,13 +226,13 @@ python experiments/ray_cpu_test.py --address auto --output /tmp/ray_cpu_output
 
 Dashboard 查询仍可能产生统计调用，因此稍后截图为 290 条。两边核心计算数量一致，差异来自额外辅助记录；另一环境为什么未显示这些记录，还需比较版本、配置和统计范围。
 
-![云端 Task Table](images/ray-core-dashboard-tasks.png)
+![云端 Task Table](https://cdn.jsdelivr.net/gh/WenDing-Y/ray@5cc415ade7/images/ray-core-dashboard-tasks.png)
 
 [单独查看图片](https://github.com/WenDing-Y/ray/blob/work/images/ray-core-dashboard-tasks.png)
 
 Actor 表共 5 个实例：**2 个计算 Actor + 3 个内部辅助 Actor**。`concurrency=2` 只配置本次转换的计算池。
 
-![云端 Actor Table](images/ray-core-dashboard-actors.png)
+![云端 Actor Table](https://cdn.jsdelivr.net/gh/WenDing-Y/ray@5cc415ade7/images/ray-core-dashboard-actors.png)
 
 [单独查看图片](https://github.com/WenDing-Y/ray/blob/work/images/ray-core-dashboard-actors.png)
 
