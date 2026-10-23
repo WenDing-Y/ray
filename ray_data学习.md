@@ -53,29 +53,7 @@ ds.write_parquet("s3://bucket/output/")
 
 简化后的执行架构：
 
-```text
-                         Driver / Dataset
-              构建 Logical Plan → 优化 → Physical Plan
-                                 │
-                                 ▼
-                       Streaming Executor
-               协调算子、任务调度、背压和资源使用
-                                 │
-                                 ▼
-       Read       →     Map / Filter   →   Tokenize   →   Write
-     Operator 1          Operator 2        Operator 3    Operator 4
-                                 │
-                    由 Ray 调度到各节点执行
-                                 ▼
-     ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-     │   Ray Node A    │ │   Ray Node B    │ │   Ray Node C    │
-     │  Worker / Task  │ │  Worker / Task  │ │  Worker / Task  │
-     │ ┌─────────────┐ │ │ ┌─────────────┐ │ │ ┌─────────────┐ │
-     │ │ Object Store│ │ │ │ Object Store│ │ │ │ Object Store│ │
-     │ │    Blocks   │ │ │ │    Blocks   │ │ │ │    Blocks   │ │
-     │ └─────────────┘ │ │ └─────────────┘ │ │ └─────────────┘ │
-     └─────────────────┘ └─────────────────┘ └─────────────────┘
-```
+![Ray Data 简化执行架构](images/screenshot-20261023-111725.png)
 
 概念示意：各算子可在不同节点并发执行；实际物理算子可能经过融合优化。
 
