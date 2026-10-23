@@ -1,0 +1,28 @@
+{
+  "ray_version": "2.59.0",
+  "job_id": "02000000",
+  "rows": 100000,
+  "initial_blocks": 100,
+  "batch_size": 1000,
+  "concurrency": 2,
+  "cluster_cpus": 4,
+  "elapsed_seconds": 57.87,
+  "throughput_rows_per_second": 1728.11,
+  "export_snapshot_tasks": 287,
+  "task_function_counts": {
+    "_StatsActor.update_execution_metrics": 13,
+    "_AutoscalingCoordinatorActor.get_reserved_resources": 53,
+    "_map_task": 100,
+    "_StatsActor.get_datasets": 4,
+    "_AutoscalingCoordinatorActor.cancel_request": 1,
+    "MapWorker(MapBatches(CpuHeavyTokenizer)).submit": 100,
+    "_StatsActor.register_dataset": 1,
+    "_AutoscalingCoordinatorActor.request_resources": 6,
+    "ActorLocationTracker.update_actor_location": 2,
+    "MapWorker(MapBatches(CpuHeavyTokenizer)).get_location": 2,
+    "_StatsActor.__init__": 1,
+    "MapWorker(MapBatches(CpuHeavyTokenizer)).__init__": 2,
+    "ActorLocationTracker.__init__": 1,
+    "_AutoscalingCoordinatorActor.__init__": 1
+  }
+}

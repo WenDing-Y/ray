@@ -1,0 +1,124 @@
+2026-10-23 02:22:29,275	INFO worker.py:1836 -- Connecting to existing Ray cluster at address: 172.18.0.3:6379...
+2026-10-23 02:22:29,285	INFO worker.py:2024 -- Connected to Ray cluster. View the dashboard at [1m[32mhttp://172.18.0.3:8265 [39m[22m
+Cluster resources: {'memory': 13686829056.0, 'CPU': 4.0, 'object_store_memory': 1610612736.0, 'node:172.18.0.2': 1.0, 'node:172.18.0.4': 1.0, 'node:__internal_head__': 1.0, 'node:172.18.0.3': 1.0}
+Available resources: {'object_store_memory': 1610612736.0, 'CPU': 4.0, 'memory': 13686829056.0, 'node:172.18.0.2': 1.0, 'node:172.18.0.4': 1.0, 'node:__internal_head__': 1.0, 'node:172.18.0.3': 1.0}
+Generating data...
+Initial blocks: 100
+2026-10-23 02:22:29,844	WARNING util.py:650 -- The argument ``concurrency`` is deprecated in Ray 2.51. Please specify argument ``compute`` instead. For more information, see https://docs.ray.io/en/master/data/transforming-data.html#stateful-transforms.
+Starting CPU-intensive pipeline...
+2026-10-23 02:22:30,016	INFO streaming_executor.py:214 -- Starting execution of Dataset dataset_034kpQ7Vk3tzPvyCMeL9CW_0. Full logs are in /tmp/ray/session_2026-10-22_19-41-06_084777_6/logs/ray-data
+2026-10-23 02:22:30,016	INFO streaming_executor.py:215 -- Execution plan of Dataset dataset_034kpQ7Vk3tzPvyCMeL9CW_0: InputDataBuffer[Input] -> ActorPoolMapOperator[MapBatches(CpuHeavyTokenizer)] -> TaskPoolMapOperator[Write]
+[2026-10-23 02:22:30,037 E 36700 36700] core_worker.cc:2297: Actor with class name: 'MapWorker(MapBatches(CpuHeavyTokenizer))' and ID: '2758725adbad7f7f5da6d2a902000000' has constructor arguments in the object store and max_restarts > 0. If the arguments in the object store go out of scope or are lost, the actor restart will fail. See https://github.com/ray-project/ray/issues/53727 for more details.
+2026-10-23 02:22:30,045	INFO __init__.py:56 -- Progress will be logged because stdout is a non-interactive terminal.
+2026-10-23 02:22:30,344	INFO logging_progress.py:174 -- ======= Running Dataset: dataset_034kpQ7Vk3tzPvyCMeL9CW_0 =======
+2026-10-23 02:22:30,347	INFO logging_progress.py:225 -- Total Progress: 0/?
+2026-10-23 02:22:30,348	INFO logging_progress.py:227 -- Active & requested resources: 0/0 CPU, 0.0B/0.0B object store (pending: 2 CPU)
+2026-10-23 02:22:30,348	INFO logging_progress.py:181 --
+2026-10-23 02:22:30,348	INFO logging_progress.py:231 -- MapBatches(CpuHeavyTokenizer): 0/1
+2026-10-23 02:22:30,348	INFO logging_progress.py:233 --   Tasks: 0; Actors: 2 (running=0, restarting=0, pending=2, active=0, idle=0, util=0.000, tasks_in_flight=0); Queued blocks: 100 (0.0B); Resources: 0.0 CPU, 0.0B object store; [all objects local]
+2026-10-23 02:22:30,348	INFO logging_progress.py:231 -- Write: 0/1
+2026-10-23 02:22:30,351	INFO logging_progress.py:233 --   Tasks: 0 [backpressured:tasks(ResourceBudget)]; Actors: 0; Queued blocks: 0 (0.0B); Resources: 0.0 CPU, 0.0B object store
+2026-10-23 02:22:30,351	INFO logging_progress.py:192 -- =================================================================
+[36m(MapWorker(MapBatches(CpuHeavyTokenizer)) pid=2525, ip=172.18.0.4)[0m Tokenizer initialized, PID=2525
+2026-10-23 02:22:40,368	INFO logging_progress.py:174 -- ======= Running Dataset: dataset_034kpQ7Vk3tzPvyCMeL9CW_0 =======
+2026-10-23 02:22:40,369	INFO logging_progress.py:225 -- Total Progress: 12/100
+2026-10-23 02:22:40,369	INFO logging_progress.py:227 -- Active & requested resources: 2/4 CPU, 134.8KiB/512.0MiB object store
+2026-10-23 02:22:40,369	INFO logging_progress.py:181 --
+2026-10-23 02:22:40,369	INFO logging_progress.py:231 -- MapBatches(CpuHeavyTokenizer): 12000/100000
+2026-10-23 02:22:40,369	INFO logging_progress.py:233 --   Tasks: 4; Actors: 2; Queued blocks: 84 (0.0B); Resources: 2.0 CPU, 132.8KiB object store; [0/16 objects local]
+2026-10-23 02:22:40,369	INFO logging_progress.py:231 -- Write: 12/100
+2026-10-23 02:22:40,369	INFO logging_progress.py:233 --   Tasks: 0; Actors: 0; Queued blocks: 0 (0.0B); Resources: 0.0 CPU, 2.0KiB object store
+2026-10-23 02:22:40,369	INFO logging_progress.py:192 -- =================================================================
+2026-10-23 02:22:50,430	INFO logging_progress.py:174 -- ======= Running Dataset: dataset_034kpQ7Vk3tzPvyCMeL9CW_0 =======
+2026-10-23 02:22:50,431	INFO logging_progress.py:225 -- Total Progress: 31/100
+2026-10-23 02:22:50,431	INFO logging_progress.py:227 -- Active & requested resources: 2/4 CPU, 138.0KiB/512.0MiB object store
+2026-10-23 02:22:50,431	INFO logging_progress.py:181 --
+2026-10-23 02:22:50,431	INFO logging_progress.py:231 -- MapBatches(CpuHeavyTokenizer): 31000/100000
+2026-10-23 02:22:50,431	INFO logging_progress.py:233 --   Tasks: 4; Actors: 2; Queued blocks: 65 (0.0B); Resources: 2.0 CPU, 132.8KiB object store; [0/35 objects local]
+2026-10-23 02:22:50,431	INFO logging_progress.py:231 -- Write: 31/100
+2026-10-23 02:22:50,431	INFO logging_progress.py:233 --   Tasks: 0; Actors: 0; Queued blocks: 0 (0.0B); Resources: 0.0 CPU, 5.2KiB object store
+2026-10-23 02:22:50,431	INFO logging_progress.py:192 -- =================================================================
+2026-10-23 02:23:00,499	INFO logging_progress.py:174 -- ======= Running Dataset: dataset_034kpQ7Vk3tzPvyCMeL9CW_0 =======
+2026-10-23 02:23:00,499	INFO logging_progress.py:225 -- Total Progress: 50/100
+2026-10-23 02:23:00,499	INFO logging_progress.py:227 -- Active & requested resources: 3/4 CPU, 172.0B/10.8GiB memory, 207.8KiB/512.0MiB object store
+2026-10-23 02:23:00,500	INFO logging_progress.py:181 --
+2026-10-23 02:23:00,500	INFO logging_progress.py:231 -- MapBatches(CpuHeavyTokenizer): 51000/100000
+2026-10-23 02:23:00,500	INFO logging_progress.py:233 --   Tasks: 4; Actors: 2; Queued blocks: 45 (0.0B); Resources: 2.0 CPU, 199.2KiB object store; [0/55 objects local]
+2026-10-23 02:23:00,500	INFO logging_progress.py:231 -- Write: 50/100
+2026-10-23 02:23:00,500	INFO logging_progress.py:233 --   Tasks: 1; Actors: 0; Queued blocks: 0 (0.0B); Resources: 1.0 CPU, 172.0B memory, 8.6KiB object store
+2026-10-23 02:23:00,500	INFO logging_progress.py:192 -- =================================================================
+2026-10-23 02:23:10,518	INFO logging_progress.py:174 -- ======= Running Dataset: dataset_034kpQ7Vk3tzPvyCMeL9CW_0 =======
+2026-10-23 02:23:10,518	INFO logging_progress.py:225 -- Total Progress: 67/100
+2026-10-23 02:23:10,518	INFO logging_progress.py:227 -- Active & requested resources: 2/4 CPU, 144.1KiB/512.0MiB object store
+2026-10-23 02:23:10,519	INFO logging_progress.py:181 --
+2026-10-23 02:23:10,519	INFO logging_progress.py:231 -- MapBatches(CpuHeavyTokenizer): 67000/100000
+2026-10-23 02:23:10,519	INFO logging_progress.py:233 --   Tasks: 4; Actors: 2; Queued blocks: 29 (0.0B); Resources: 2.0 CPU, 132.8KiB object store; [0/71 objects local]
+2026-10-23 02:23:10,519	INFO logging_progress.py:231 -- Write: 67/100
+2026-10-23 02:23:10,519	INFO logging_progress.py:233 --   Tasks: 0; Actors: 0; Queued blocks: 0 (0.0B); Resources: 0.0 CPU, 11.3KiB object store
+2026-10-23 02:23:10,519	INFO logging_progress.py:192 -- =================================================================
+2026-10-23 02:23:20,588	INFO logging_progress.py:174 -- ======= Running Dataset: dataset_034kpQ7Vk3tzPvyCMeL9CW_0 =======
+2026-10-23 02:23:20,588	INFO logging_progress.py:225 -- Total Progress: 85/100
+2026-10-23 02:23:20,588	INFO logging_progress.py:227 -- Active & requested resources: 2/4 CPU, 147.1KiB/512.0MiB object store
+2026-10-23 02:23:20,588	INFO logging_progress.py:181 --
+2026-10-23 02:23:20,588	INFO logging_progress.py:231 -- MapBatches(CpuHeavyTokenizer): 85000/100000
+2026-10-23 02:23:20,589	INFO logging_progress.py:233 --   Tasks: 4; Actors: 2; Queued blocks: 11 (0.0B); Resources: 2.0 CPU, 132.8KiB object store; [0/89 objects local]
+2026-10-23 02:23:20,589	INFO logging_progress.py:231 -- Write: 85/100
+2026-10-23 02:23:20,589	INFO logging_progress.py:233 --   Tasks: 0; Actors: 0; Queued blocks: 0 (0.0B); Resources: 0.0 CPU, 14.3KiB object store
+2026-10-23 02:23:20,589	INFO logging_progress.py:192 -- =================================================================
+2026-10-23 02:23:27,663	INFO streaming_executor.py:365 -- ✔️  Dataset dataset_034kpQ7Vk3tzPvyCMeL9CW_0 execution finished in 57.64 seconds
+2026-10-23 02:23:27,711	INFO dataset.py:6680 -- Data sink Parquet finished. 100000 rows and 6.5MiB data written.
+
+========== RESULT ==========
+Rows: 100000
+Requested blocks: 100
+Concurrency: 2
+Elapsed: 57.87 seconds
+Throughput: 1728.11 rows/s
+
+========== DATASET STATS ==========
+Operator 0 FromItems: 1 tasks executed, 100 blocks produced in 0.39s
+* Remote wall time: 2.05ms min, 95.54ms max, 3.89ms mean, 388.53ms total
+* Remote cpu time: 2.13ms min, 91.27ms max, 3.35ms mean, 334.67ms total
+* UDF time: 0us min, 0us max, 0.0us mean, 0us total
+* Output num rows per block: 1000 min, 1000 max, 1000 mean, 100000 total
+* Output size bytes per block: 390900 min, 412000 max, 410889 mean, 41088900 total
+* Output rows per task: 100000 min, 100000 max, 100000 mean, 1 tasks used
+* Tasks per node: 1 min, 1 max, 1 mean; 1 nodes used
+* Operator throughput:
+	* Total input num rows: 0 rows
+	* Total output num rows: 100000 rows
+	* Ray Data throughput: 253515.877980415 rows/s
+	* Estimated single task throughput: 257380.42552842633 rows/s
+
+Operator 1 MapBatches(CpuHeavyTokenizer): 100 tasks executed, 100 blocks produced in 56.08s
+* Remote wall time: 937.4ms min, 2.37s max, 1.11s mean, 110.75s total
+* Remote cpu time: 868.32ms min, 1.06s max, 908.93ms mean, 90.89s total
+* UDF time: 936.92ms min, 2.37s max, 1.11s mean, 110.65s total
+* Output num rows per block: 1000 min, 1000 max, 1000 mean, 100000 total
+* Output size bytes per block: 68000 min, 68000 max, 68000 mean, 6800000 total
+* Output rows per task: 1000 min, 1000 max, 1000 mean, 100 tasks used
+* Tasks per node: 49 min, 51 max, 50 mean; 2 nodes used
+* Operator throughput:
+	* Total input num rows: 100000 rows
+	* Total output num rows: 100000 rows
+	* Ray Data throughput: 1783.2963485237813 rows/s
+	* Estimated single task throughput: 902.9479609963095 rows/s
+
+Operator 2 Write: 100 tasks executed, 100 blocks produced in 52.6s
+* Remote wall time: 2.69ms min, 55.63ms max, 10.54ms mean, 1.05s total
+* Remote cpu time: 2.68ms min, 22.77ms max, 3.98ms mean, 397.71ms total
+* UDF time: 0us min, 0us max, 0.0us mean, 0us total
+* Output num rows per block: 1 min, 1 max, 1 mean, 100 total
+* Output size bytes per block: 172 min, 172 max, 172 mean, 17200 total
+* Output rows per task: 1 min, 1 max, 1 mean, 100 tasks used
+* Tasks per node: 50 min, 50 max, 50 mean; 2 nodes used
+* Operator throughput:
+	* Total input num rows: 100000 rows
+	* Total output num rows: 100 rows
+	* Ray Data throughput: 1.9010253323979744 rows/s
+	* Estimated single task throughput: 94.86153649772352 rows/s
+
+Dataset throughput:
+	* Ray Data throughput: 1.7827204783447543 rows/s
+
+[36m(MapWorker(MapBatches(CpuHeavyTokenizer)) pid=2525, ip=172.18.0.2)[0m Tokenizer initialized, PID=2525

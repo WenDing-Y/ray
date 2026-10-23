@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-label="两个 Actor 可以执行多次任务，Task Table 数量不等于进程数量">
+<rect width="1100" height="650" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">2 个 Actor ≠ 2 个 Task，也不等于 Task Table 总数</text>
+<text x="40" y="85" font-size="17" fill="#64748b">可调用类 + concurrency=2：两个实例反复处理输入；任务分配和数量仅作示意</text>
+<rect x="40" y="115" width="1020" height="65" rx="12" fill="#dbeafe" stroke="#93c5fd"/>
+<text x="550" y="154" text-anchor="middle" font-size="22" fill="#1e40af">输入：100,000 行 / 请求 100 个 Block / batch_size=1,000</text>
+<g fill="white" stroke="#cbd5e1"><rect x="40" y="215" width="495" height="165" rx="12"/><rect x="565" y="215" width="495" height="165" rx="12"/></g>
+<g font-size="23" font-weight="700" fill="#0f172a" text-anchor="middle"><text x="287" y="250">Actor A / Worker A</text><text x="812" y="250">Actor B / Worker B</text></g>
+<g font-size="18" fill="#475569" text-anchor="middle"><text x="287" y="285">初始化一次 CpuHeavyTokenizer</text><text x="812" y="285">初始化一次 CpuHeavyTokenizer</text></g>
+<g fill="#dcfce7" stroke="#86efac"><rect x="65" y="310" width="445" height="45" rx="8"/><rect x="590" y="310" width="445" height="45" rx="8"/></g>
+<g font-size="19" fill="#166534" text-anchor="middle"><text x="287" y="339">调用 1 → 调用 3 → 调用 5 → …</text><text x="812" y="339">调用 2 → 调用 4 → 调用 6 → …</text></g>
+<path d="M287 180V210m-5 -7 5 7 5 -7M812 180V210m-5 -7 5 7 5 -7M287 380V410m-5 -7 5 7 5 -7M812 380V410m-5 -7 5 7 5 -7" fill="none" stroke="#64748b" stroke-width="2"/>
+<rect x="40" y="420" width="1020" height="65" rx="12" fill="#e0e7ff" stroke="#a5b4fc"/>
+<text x="550" y="459" text-anchor="middle" font-size="21" fill="#3730a3">结果 Block → Parquet 写出任务（实际任务数取决于执行计划）</text>
+<rect x="40" y="515" width="1020" height="100" rx="12" fill="#fff7ed" stroke="#fdba74"/>
+<text x="65" y="550" font-size="21" font-weight="700" fill="#9a3412">Task Table：计算调用 + 写出任务 + Actor 创建 + 其他辅助记录</text>
+<text x="65" y="583" font-size="18" fill="#9a3412">204 是一次观测结果；必须按 Job、任务名、类型和 Actor ID 核对，不能由参数直接推出。</text>
+</g>
+</svg>
