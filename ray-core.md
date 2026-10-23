@@ -19,7 +19,7 @@ Actor 方法调用也是 Task，称为 **Actor Task**；远程函数调用称为
 
 ### 二、代码示例
 
-#### Task：五次调用不等于五个 Worker
+#### Task：
 
 ```python
 import os
@@ -34,7 +34,8 @@ def process(x):
 print(ray.get([process.remote(i) for i in range(5)]))
 ```
 
-同一个 Worker 可先后执行多个 Task，但任务不保证落在同一个进程，不能依赖全局变量保存跨任务状态。
+<img width="1848" height="968" alt="image" src="https://github.com/user-attachments/assets/c49ab30f-51d0-4a8a-9544-97e20e339a23" />
+
 
 #### Actor：多次调用共享实例状态
 
