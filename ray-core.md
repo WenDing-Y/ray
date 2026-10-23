@@ -59,8 +59,10 @@ actor = Counter.remote()
 for _ in range(3):
     print(ray.get(actor.increment.remote()))  # 依次输出 1、2、3
 ```
-
+这个是task table3个，actor 1 个
 Actor 重启会重新初始化，内存状态不会自动恢复。Async / Threaded Actor 支持并发调用，但需要处理共享状态同步；并发也不保证 CPU 计算加速。
+<img width="2786" height="1100" alt="image" src="https://github.com/user-attachments/assets/3b60ac48-9ab1-4acf-861e-378e422e2ca6" />
+
 
 ### 三、Ray Data 中如何选择？
 
