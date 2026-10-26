@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-label="从惰性计划到物化结果">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="650" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">从惰性计划到物化结果</text>
+<rect x="90" y="90" width="920" height="90" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="550.0" y="123" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Dataset：描述上游处理计划</text>
+<text x="550.0" y="154" text-anchor="middle" font-size="17" fill="#475569">Read → Map → Filter → MapBatches</text>
+<path d="M550 180V230" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="230" y="240" width="640" height="85" rx="12" fill="#dcfce7" stroke="#cbd5e1"/>
+<text x="550.0" y="273" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">cached = ds.materialize()</text>
+<text x="550.0" y="304" text-anchor="middle" font-size="17" fill="#475569">执行上游计算，返回 MaterializedDataset</text>
+<path d="M420 325V355H280V380" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M680 325V355H820V380" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="65" y="390" width="430" height="105" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="280.0" y="423" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Ray Node A · Object Store</text>
+<text x="280.0" y="454" text-anchor="middle" font-size="17" fill="#475569">Block 1 / Block 2</text>
+<rect x="605" y="390" width="430" height="105" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="820.0" y="423" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Ray Node B · Object Store</text>
+<text x="820.0" y="454" text-anchor="middle" font-size="17" fill="#475569">Block 3 / Block 4</text>
+<text x="550" y="363" text-anchor="middle" font-size="16" fill="#64748b">引用分布式 Block，不将全部数据收集到 Driver</text>
+<rect x="90" y="535" width="920" height="80" rx="12" fill="#ffedd5" stroke="#cbd5e1"/>
+<text x="550.0" y="568" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">保留结果 ≠ 保证始终驻留内存 ≠ 持久化 Checkpoint</text>
+<text x="550.0" y="599" text-anchor="middle" font-size="17" fill="#475569">内存压力下可能 Spilling；故障恢复仍需单独设计</text>
+</g></svg>

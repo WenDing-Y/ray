@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-label="清洗一次，多个下游复用物化结果">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="650" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">清洗一次，多个下游复用物化结果</text>
+<rect x="250" y="85" width="600" height="80" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="550.0" y="118" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">原始 JSONL → 清洗 + 过滤</text>
+<text x="550.0" y="149" text-anchor="middle" font-size="17" fill="#475569">上游计算</text>
+<path d="M550 165V200" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="200" y="210" width="700" height="90" rx="12" fill="#dcfce7" stroke="#cbd5e1"/>
+<text x="550.0" y="243" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">cleaned = cleaned.materialize()</text>
+<text x="550.0" y="274" text-anchor="middle" font-size="17" fill="#475569">共享已计算的清洗结果 Block</text>
+<path d="M550 300V340H200V380" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M550 300V340H550V380" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M550 300V340H900V380" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="50" y="390" width="300" height="90" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="200.0" y="423" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">分词处理</text>
+<text x="200.0" y="454" text-anchor="middle" font-size="17" fill="#475569">cleaned.map_batches(...)</text>
+<rect x="400" y="390" width="300" height="90" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="550.0" y="423" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">长度统计</text>
+<text x="550.0" y="454" text-anchor="middle" font-size="17" fill="#475569">cleaned.map(...)</text>
+<rect x="750" y="390" width="300" height="90" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="900.0" y="423" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">保存清洗结果</text>
+<text x="900.0" y="454" text-anchor="middle" font-size="17" fill="#475569">cleaned.write_parquet(...)</text>
+<rect x="70" y="525" width="960" height="85" rx="12" fill="#ffedd5" stroke="#cbd5e1"/>
+<text x="550.0" y="558" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">适用：上游昂贵 + 多次使用 + 有足够存储资源</text>
+<text x="550.0" y="589" text-anchor="middle" font-size="17" fill="#475569">结果过大可能大量溢写；分支需要消费触发，不代表自动并发</text>
+</g></svg>

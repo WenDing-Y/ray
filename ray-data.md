@@ -928,3 +928,125 @@ print(ds.stats())
 | 典型应用 | AI 数据预处理、批处理 | 实时流计算、有状态处理 |
 
 两者都可以处理大规模数据，但可靠性边界不同。**计算可重试、作业能续跑、输出不重复，是三个需要分别验证的问题。**
+
+## 第八题：如何理解数据物化与中间结果复用？
+
+核心是搞清楚三个问题：
+
+1. 数据什么时候真正执行计算？
+2. 计算完成的数据存储在哪里？
+3. 再次使用 Dataset 时，是否需要重新计算？
+
+**Ray Data 的转换默认采用惰性执行。`materialize()` 可以主动执行计算并保留结果，供后续操作复用，避免正常消费时重新执行上游 Pipeline。**
+
+### 一、什么是数据物化？
+
+假设有下面的 Pipeline：
+
+```python
+import ray
+
+ray.init()
+
+# clean_text、is_valid、tokenize_batch 需要自行定义。
+ds = ray.data.read_parquet("s3://bucket/raw/")
+ds = ds.map(clean_text)
+ds = ds.filter(is_valid)
+ds = ds.map_batches(tokenize_batch)
+```
+
+此时 `ds` 主要描述处理计划，不代表所有数据都已经处理完成；数据读取或元数据获取可能提前产生部分工作。
+
+```python
+cached = ds.materialize()
+```
+
+这个调用执行上游计算，返回 **MaterializedDataset**，保留最终结果的 Block 引用。后续使用 `cached` 可以消费这些已计算的 Block。
+
+![Ray Data 从惰性计划到物化结果](images/ray-data-materialization.svg)
+
+`materialize()` 不会原地修改原 Dataset，必须使用返回值。`ds = ds.materialize()` 也是正确写法；只调用 `ds.materialize()` 却丢弃返回值，不能据此让后续 `ds` 获得同样的复用保证。
+
+### 二、materialize() 前后有什么区别？
+
+```python
+# expensive_function 需要自行定义。
+ds = ray.data.range(1_000_000).map(expensive_function)
+```
+
+#### 情况 A：没有显式物化
+
+```python
+ds.count()
+ds.write_parquet("/tmp/output")
+```
+
+两者都可能触发所需执行，但**不能把它理解为上游必然完整计算两遍**。例如 `count()` 可能利用元数据或优化后的计划；已有执行结果是否复用也取决于具体操作和 Dataset 状态。不要用 `count()` 判断昂贵 UDF 一定运行过。
+
+#### 情况 B：显式物化
+
+```python
+cached = ds.materialize()
+cached.count()
+cached.write_parquet("/tmp/output")
+```
+
+- `materialize()` 执行昂贵转换，保留结果。
+- `count()` 可利用物化结果的元数据。
+- `write_parquet()` 直接消费已物化的 Block。
+- 正常情况下，后两个操作无需再次执行 `expensive_function`。
+
+这里复用的是物化点的结果；新增在物化点之后的转换仍需要执行。集群运行时，`/tmp/output` 属于写任务所在节点，统一访问输出应使用共享存储。
+
+### 三、物化后的数据存储在哪里？
+
+物化结果通常以 Block 形式分布在各节点的 Object Store 中，MaterializedDataset 持有这些 Block 的引用。
+
+1. `materialize()` 不等于把全部数据收集到 Driver 的 Python 内存。
+2. Block 可以位于不同 Ray Node，按需传输给消费者。
+3. 引用使结果保持可用，但不保证所有字节始终驻留内存；内存压力下可能 Spilling 到磁盘。
+4. 物化不是持久化或 Checkpoint。集群、节点或 Job 故障后，不能依赖它提供可靠的作业续跑；对象丢失时也可能涉及重建或失败。
+
+### 四、什么情况下需要复用中间结果？
+
+假设清洗 1TB JSONL 后，需要分词、统计长度、保存清洗结果：
+
+```python
+raw = ray.data.read_json("s3://bucket/raw/")
+cleaned = raw.map(clean_text).filter(is_valid).materialize()
+
+# 构建两个下游分支；仍需要消费操作触发执行。
+tokenized = cleaned.map_batches(tokenize_batch)
+lengths = cleaned.map(calculate_length)
+
+# 按顺序执行三个任务，复用同一份清洗结果。
+tokenized.write_parquet("s3://bucket/tokenized/")
+lengths.write_parquet("s3://bucket/lengths/")
+cleaned.write_parquet("s3://bucket/cleaned/")
+```
+
+`calculate_length` 等函数需要自行定义。
+
+![多个下游复用清洗后的物化结果](images/ray-data-materialized-reuse.svg)
+
+三个分支正常消费时无需分别重读原始数据并重新清洗。图中的分支表示依赖关系，不代表它们自动同时运行。
+
+**复用收益需要与存储成本权衡。** 如果结果仍有 800GB，而 Object Store 只有 32GB 可用内存，大量 Spilling 与恢复可能拖慢执行，磁盘容量也可能不足。
+
+物化适合上游计算昂贵、结果需要多次使用、且内存及磁盘资源足以承载的场景。只消费一次时通常优先保持流式执行；结果很大或需要跨 Job 复用时，可考虑先写 Parquet，再由下游读取。
+
+### 五、materialize() 与 write_parquet() 有什么区别？
+
+| 对比 | materialize() | write_parquet() |
+| --- | --- | --- |
+| 目的 | 保留并复用计算结果 | 将数据写入文件存储 |
+| 存储位置 | Object Store，可能 Spilling 到磁盘 | 文件系统、S3 等目标存储 |
+| 是否触发执行 | 是 | 是 |
+| 跨 Job 复用 | 通常不适合作为跨 Job 数据接口 | 可重新读取已完成的输出 |
+| Job 崩溃后恢复 | 不提供可靠的持久化恢复保证 | 持久存储中的有效输出可作为恢复输入 |
+| 返回值 | MaterializedDataset | 写出接口不返回物化 Dataset |
+| 典型用途 | 同一 Job 内复用中间结果 | 阶段落盘、结果交付和跨 Job 复用 |
+
+写到单节点临时磁盘并不等于可靠持久化；S3 输出也仍需校验完整性和提交状态。
+
+对于“处理 1TB，运行到 900GB 时 Job 崩溃”的场景，**`materialize()` 不能代替 Checkpoint**。应使用适用的原生 Checkpoint，或分批写入持久存储并记录已提交分片，恢复后跳过已完成部分，具体见第七题。
