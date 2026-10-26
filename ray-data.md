@@ -1050,3 +1050,13 @@ cleaned.write_parquet("s3://bucket/cleaned/")
 写到单节点临时磁盘并不等于可靠持久化；S3 输出也仍需校验完整性和提交状态。
 
 对于“处理 1TB，运行到 900GB 时 Job 崩溃”的场景，**`materialize()` 不能代替 Checkpoint**。应使用适用的原生 Checkpoint，或分批写入持久存储并记录已提交分片，恢复后跳过已完成部分，具体见第七题。
+
+### 六、不同场景如何选择？
+
+| 场景 | 推荐方式 |
+| --- | --- |
+| 只执行一次的 Pipeline | 流式执行 |
+| 小规模数据，多次复用 | `materialize()` |
+| 大规模数据，多次复用 | S3 / Parquet 持久化 |
+| 需要跨 Job 复用 | S3 / Parquet |
+| 需要故障恢复 | 持久化 + 分片进度管理，或适用的原生 Checkpoint |
