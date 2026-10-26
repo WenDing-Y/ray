@@ -1233,3 +1233,178 @@ Clean Task 减少也可能是输入耗尽、资源不足或其他限制导致，
 | 少数不可拆分的长尾任务 | 不一定有效，需调整数据和任务粒度 |
 
 判断顺序是：**确认瓶颈 → 检查能否扩大有效并发 → 评估内存、I/O 和下游能力 → 扩容后复测吞吐。**
+
+## 第十题：Ray Data 任务出现 OOM，应该如何系统性排查？
+
+OOM（Out Of Memory）不能简单归因于 Worker 内存不足，也不应一开始就增加节点。
+
+**先确定哪一层内存出问题，再定位异常 Operator，最后判断是数据积压、单任务过大、并发过高，还是引用或缓存持续累积。**
+
+Ray Data 涉及 Python Worker、Object Store、Ray 内存监控，以及 Kubernetes 容器限制，需要分别检查。
+
+### 一、先理解内存结构
+
+![Ray Data 内存层次与 OOM 边界](images/ray-data-oom-memory-layers.svg)
+
+| 内存区域或限制 | 典型问题 |
+| --- | --- |
+| Python Worker Heap | Batch 过大、Tokenizer 或模型占用、Python 对象累积 |
+| Object Store | Block 积压、下游消费慢、对象长期被引用 |
+| Node 整体内存 | 多个 Worker 同时计算，加上共享对象、Ray 组件和其他进程造成压力 |
+| Kubernetes 容器内存限制 | 容器计入的内存达到 cgroup 限制，可能被 OOMKill |
+
+这些不是可以直接相加的独立配额。Object Store 共享映射可能计入多个 Worker 的 RSS；Node、容器和进程指标的统计范围也不同。
+
+需要区分：
+
+- **Object Store 满，不等于整个节点 OOM**：可溢写对象可能转移到磁盘，但不是所有对象随时都能释放。
+- **Worker Heap OOM，扩大 Object Store 通常无益**：还可能挤占可用于计算的物理内存。
+- **Kubernetes OOMKilled 与 Ray 主动杀 Worker 不同**：前者需核对容器限制及内核证据，后者是 Ray 的内存保护行为。
+
+### 二、系统性排查的六个步骤
+
+![Ray Data OOM 系统排查流程](images/ray-data-oom-triage.svg)
+
+1. **确认故障类型**：查 Ray 日志、Pod 状态与退出原因，区分 Ray 主动终止、Linux / K8s OOMKill、Python 分配失败或对象存储错误。
+2. **检查内存指标**：看 Node / 容器内存、Worker RSS / USS、Object Store 和溢写，关注峰值与趋势。
+3. **定位异常 Operator**：结合 Dashboard 的 Data、Cluster、Metrics 和日志，查看 Read、Map、MapBatches、Write 的内存、队列及 Block 变化。
+4. **分析 Block 和 Batch**：检查输入字节数、超长记录、Padding、输出膨胀和数据倾斜。
+5. **检查并发与反压**：确认同一节点是否堆叠过多内存密集任务，以及上游是否超过下游消费能力。
+6. **针对性优化并复测**：逐项调整 Batch、Block、并发、资源请求和预算，比较峰值、失败率及吞吐量。
+
+### 三、具体应该怎么排查？
+
+#### 1. 从日志确认故障类型
+
+Kubernetes 环境中，可按实际命名空间、Pod 和容器名执行：
+
+```bash
+# 查看容器当前与上次退出状态、Reason 和 Events。
+kubectl -n <namespace> describe pod <worker-pod>
+
+# 查看当前使用量；需要 Metrics Server，采样值不一定捕获峰值。
+kubectl -n <namespace> top pod <worker-pod> --containers
+
+# 查看 Ray 容器输出；有过重启时，可加 --previous 查看上次日志。
+kubectl -n <namespace> logs <worker-pod> -c <ray-container> --tail=200
+
+# 容器仍运行时查看 raylet 日志，实际路径按部署配置调整。
+kubectl -n <namespace> exec <worker-pod> -c <ray-container> -- \
+    tail -n 200 /tmp/ray/session_latest/logs/raylet.out
+```
+
+| 错误或现象 | 优先排查 |
+| --- | --- |
+| Ray `OutOfMemoryError`，日志说明 Worker 被内存监控终止 | Ray 监控的 Node / 容器内存、任务并发和 Worker 占用 |
+| 容器状态为 `OOMKilled` | 容器峰值、`limits.memory`、节点及内核相关事件 |
+| 只有 Exit Code 137 | 说明进程收到 SIGKILL；需结合 Reason / Events，不能单独认定 OOM |
+| `ObjectStoreFullError` | Object Store、不可释放对象、引用、溢写空间与配置 |
+| Python `MemoryError` | Worker Heap、分配请求、Batch 和 UDF |
+| `OutOfDiskError` 或磁盘写入失败 | Spilling / 临时目录容量、配额及文件系统状态 |
+
+Ray memory monitor 会监控其看到的系统内存压力，并可能提前终止 Task 或 Actor，避免整个运行环境崩溃。不要先关闭监控；应先找出内存来源。Python 分配失败也不保证一定抛出 `MemoryError`，进程可能先被 Ray 或内核终止。
+
+#### 2. 从 Dashboard 定位增长位置
+
+| 指标 | 排查问题 |
+| --- | --- |
+| Node / 容器 Memory Used | 哪个内存边界接近上限，是否与容器限制一致 |
+| Worker RSS / USS | 是否有单个进程异常增长，私有内存是否持续累积 |
+| Object Store Used | 是否有大量共享 Block 未释放 |
+| Spilled / Restored Bytes | 是否频繁溢写、恢复，磁盘是否成为瓶颈 |
+| Operator Throughput / Queue | 下游是否消费不足，哪个队列持续积压 |
+| Running Tasks / Actor 数 | 同节点同时运行的计算实例是否过多 |
+
+指标名称与可见范围因版本及监控配置变化。RSS 包含共享页，USS 更侧重进程私有页，也不能仅凭单个指标判定泄漏。
+
+重点看趋势：
+
+- **突然暴涨**：超大 Batch、Block、异常样本或一次大型临时分配。
+- **随并发增长**：多个 Worker 的模型、输入、输出和临时结果同时驻留。
+- **持续增长不回落**：检查长期引用、缓存和 Actor 状态；也可能存在分配器保留内存，需要进一步验证。
+- **Object Store 高位且溢写增加**：检查 Block 生命周期、物化结果引用、下游吞吐和磁盘。
+
+反压与 Spilling 会缓解积压，但不保证没有 OOM，也不能解决 Worker 私有堆内存失控。
+
+### 四、结合 Tokenize 场景分析 OOM
+
+```python
+# clean_text、is_valid 和 Tokenizer 需要自行定义。
+ds = (
+    ray.data.read_json("s3://bucket/input/")
+    .map(clean_text)
+    .filter(is_valid)
+    .map_batches(
+        Tokenizer,
+        batch_size=1000,
+        batch_format="numpy",
+        concurrency=8,
+    )
+)
+ds.write_parquet("s3://bucket/output/")
+```
+
+这里重点检查三个风险。
+
+#### 风险一：Batch 太大
+
+`batch_size=1000` 是行数，不是内存上限。少量超长文本可能显著增加计算与输出；若按批次最长序列 Padding，而又没有合理截断，短样本也可能被填充到很长。
+
+可先在对照实验中降低 Batch 和并发：
+
+```python
+ds = ds.map_batches(
+    Tokenizer,
+    batch_size=128,
+    batch_format="numpy",
+    concurrency=4,
+    num_cpus=1,
+)
+```
+
+这段表示替换原来的 Tokenize 阶段，不是在已经分词的 Dataset 上再追加一次。确认效果后再分别调整参数，必要时按文本长度分桶或隔离长样本。
+
+#### 风险二：并发过高
+
+假设每个 Tokenizer Actor 的私有峰值工作内存约 2GB：
+
+| 同时驻留的 Actor 数 | 工作内存估算 |
+| --- | ---: |
+| 2 | 4 GB |
+| 4 | 8 GB |
+| 8 | 16 GB |
+| 16 | 32 GB |
+
+这只是简化估算，还未计入 Object Store、其他 Operator、Ray 组件和系统开销。容量规划应看**每个节点和容器**的实际放置，不能只看集群总内存。
+
+降低 `concurrency` 最直接。增加每个 Actor 的 `num_cpus` 请求也可能间接限制同节点并发，但会牺牲调度灵活性，应按真实 CPU 需求配置。
+
+当前仓库的 `map_batches()` 支持 `memory` 调度请求，可依据测得峰值及余量设置；实际安装版本需核对。**`memory` 是调度声明，不是强制内存上限**，并且还要给其他算子和共享对象留空间。
+
+#### 风险三：UDF 长期保存历史结果
+
+```python
+class Tokenizer:
+    def __init__(self):
+        self.results = []
+
+    def __call__(self, batch):
+        tokens = tokenize(batch)  # tokenize 需要自行定义。
+        self.results.append(tokens)  # 每批结果被长期保留。
+        return {"tokens": tokens}
+```
+
+Actor 会复用实例，`self.results` 因此不断增长，即使 Batch 很小仍可能最终 OOM。删除不必要的历史缓存，或使用有明确容量上限的缓存；返回结果后不应无故继续持有整个批次。
+
+### 五、按主要现象快速定位
+
+| 主要现象 | 优先怀疑 | 下一步 |
+| --- | --- | --- |
+| Worker 内存持续上涨 | UDF 缓存、Actor 历史状态、Batch 或临时对象 | 记录 USS / RSS 趋势，检查引用和缓存，用少量批次复现 |
+| Object Store 高位、频繁 Spilling | 中间数据积压、物化结果或对象引用保留 | 查看队列、下游吞吐、引用生命周期和磁盘容量 |
+| 提高并发后才 OOM | 多份模型和工作集同时驻留 | 降并发，对比单实例峰值与每节点放置 |
+| 突遇某个 Batch 才 OOM | 超长样本、Padding、输出膨胀 | 记录该批行数、字节数与长度分布，隔离复现 |
+| Pod `OOMKilled` | 容器达到内存边界或系统 OOM 影响 | 核对 `limits.memory`、峰值、事件及节点证据 |
+| 反复溢写后出现磁盘错误 | 磁盘容量或 I/O 不足 | 检查溢写目录空间和挂载，减少工作集 |
+
+优化后用相同输入复测：既要确认 OOM 消失，也要观察峰值、溢写量、重试次数和吞吐。**增加节点只有在任务能分散、单节点工作集下降时才可能有效，不能直接解决一个不可拆分的超大 Batch 或无界缓存。**
