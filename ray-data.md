@@ -623,3 +623,133 @@ Read Task → Block A → MapBatches Task → Block B → Write Task
 如果 Head Pod 和两个 Worker Pod 各运行一个 Ray Node，它们通常各有独立的 Object Store。
 
 即使两个 Pod 位于同一台 Kubernetes 物理节点，也不会自动合并对象存储。Pod 内的 Worker 可共享本节点对象；跨 Ray Node 获取对象仍需要对象传输，不能视为同节点共享内存读取。
+
+## 第七题：如何设计可靠的 Ray Data 数据处理任务？
+
+以 1TB JSONL → 清洗 → Tokenize → 统计 Token 数 → S3 Parquet 为例，可靠性需要同时保证：**数据正确、故障可恢复、重复执行安全、资源可控、问题可定位。**
+
+### 一、设计要点
+
+| 维度 | 主要措施 |
+| --- | --- |
+| 数据正确 | 固定输入快照和处理版本，保留记录 ID，校验 Schema、行数与业务指标 |
+| 计算恢复 | 为可恢复故障配置有限重试；坏数据隔离，避免反复重试确定性错误 |
+| 输出一致性 | 每次尝试写独立路径，验证后提交 Manifest；消费者只读取已提交结果 |
+| 作业续跑 | 持久化分片进度，重启后跳过已提交分片；按版本评估内置 Checkpoint |
+| 资源控制 | 联合设置 Block、Batch、并发和资源预算，分别监控堆内存、Object Store 和显存 |
+| 数据倾斜 | 按样本成本分批，隔离超长文本，检查长尾任务 |
+| 可观测性 | Dashboard、任务日志、`ds.stats()`，记录失败、坏数据及分片提交状态 |
+
+### 二、计算重试不等于输出 Exactly-Once
+
+![计算恢复与外部提交的边界](images/ray-data-reliability-boundary.svg)
+
+- **系统故障**：如 Worker 崩溃、节点丢失，可由 Ray 在相应配置与重试预算内恢复计算。
+- **业务错误**：如字段缺失、非法类型，应标记并隔离；输入 JSON 无法解析时，行级清洗函数尚未执行，需要在读取或预处理环节处理。
+- **外部副作用**：任务失败前可能已经写入文件或调用外部服务，重试不会自动撤销这些结果。UDF 尽量保持纯计算；外部调用需使用幂等键。
+
+重试规则取决于算子、故障类型、Ray 版本及配置，不能假定所有异常都会重试。恢复后应验证输出，而不是只检查 Job 是否成功。
+
+### 三、分片、验证与提交
+
+![分片持久化与失败续跑流程](images/ray-data-shard-commit.svg)
+
+将输入划为稳定的逻辑分片，用 **输入快照 + 处理版本 + shard_id** 标识工作；每次执行再生成独立 `attempt_id`。
+
+1. 查询持久化提交记录：已提交则跳过，未提交才执行。多个 Job 并发时使用租约或条件更新协调。
+2. 写入本次尝试专属路径，例如 `runs/<run_id>/<shard_id>/<attempt_id>/`。
+3. 验证 Schema、有效行数、坏数据数、文件完整性和业务指标。
+4. 通过事务或条件写，提交包含输出文件清单的 Manifest。只有胜出的提交对消费者可见。
+5. 重启时以已提交 Manifest 为准恢复；未提交结果可重算，孤立文件按保留策略清理。
+
+**S3 的多个文件写入不是一个目录事务，也没有通用的原子目录重命名。** 不要先标记分片完成再提交文件。Manifest 和进度状态应由同一权威提交记录决定，或能够从该记录重建，避免双写不一致。
+
+消费者必须遵循 Manifest，不能直接扫描全部尝试目录，否则仍可能读到重复或未完成数据。Task 重试与 `write_parquet()` 成功返回，本身都不能证明端到端 Exactly-Once。
+
+### 四、处理代码示例
+
+下面仅演示清洗标记、Tokenizer 复用和并发控制。生产提交协议按上一节实现；示例中的每个输入需有稳定、非空且唯一的 `id`。
+
+```python
+import ray
+from transformers import AutoTokenizer
+
+ray.init()
+
+
+def clean_text(row):
+    text = row.get("text")
+    error = ""
+    if not isinstance(text, str):
+        text, error = "", "invalid_text_type"
+    else:
+        text = text.strip()
+        if not text:
+            error = "empty_text"
+    return {"id": row["id"], "text": text, "error": error}
+
+
+class TokenizeBatch:
+    def __init__(self):
+        # 生产环境固定模型 revision，保证重跑使用相同版本。
+        self.tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
+
+    def __call__(self, batch):
+        result = self.tokenizer(
+            batch["text"].tolist(),
+            truncation=True,
+            max_length=512,
+        )
+        return {
+            "id": batch["id"],
+            "token_count": [len(ids) for ids in result["input_ids"]],
+        }
+
+
+cleaned = ray.data.read_json("s3://bucket/input/").map(clean_text, num_cpus=1)
+
+# 每次尝试使用唯一且事先生成的路径；此处仅展示路径结构。
+attempt_path = "s3://bucket/runs/<run_id>/<shard_id>/<attempt_id>"
+cleaned.filter(lambda row: row["error"] != "").write_parquet(
+    f"{attempt_path}/errors/"
+)
+result = cleaned.filter(lambda row: row["error"] == "").map_batches(
+    TokenizeBatch,
+    batch_size=256,
+    batch_format="numpy",
+    concurrency=2,
+    num_cpus=1,
+)
+result.write_parquet(f"{attempt_path}/data/")
+print(result.stats())
+# 下一步：验证 data/errors 结果，再条件提交 Manifest。
+```
+
+`token_count` 是**截断后且包含默认特殊 Token** 的长度，不是原始文本的完整 Token 数。若需完整计数，应改变截断策略，并重新评估长文本成本。
+
+错误与有效数据两次消费可能重复执行上游读取和清洗；大规模任务可先写一个带错误标记的中间数据集再分流。`materialize()` 能复用结果，但会增加存储压力，不适合不加评估地缓存整个 1TB 数据集。
+
+### 五、内存与监控
+
+`batch_size` 控制行数，不是字节上限；算子 `concurrency` 也不是整个集群的任务上限。内存预算要包含模型副本、输入、输出、临时对象和缓冲区，不能只算 Batch 输入。
+
+| 现象 | 优先检查 |
+| --- | --- |
+| Worker 内存持续增长 | Batch、模型、临时对象、缓存与泄漏；RSS 还可能计入共享映射页 |
+| Object Store 高占用、频繁 Spilling | 中间工作集、引用保留、下游吞吐、磁盘性能 |
+| 少数 Task 极慢 | 超长文本、分片不均、慢节点、I/O 长尾 |
+| 重试或失败持续增加 | 系统故障、确定性业务错误、重试策略是否合适 |
+| 上游 Backpressure | 顺着流水线检查下游算子、Sink 和资源预算 |
+| CPU 长期高占用 | 可能是正常计算饱和，结合 UDF 耗时和吞吐判断 |
+
+根据实际版本使用 `DataContext` 的执行资源预算，并限制每个算子的并发。逻辑 CPU/内存资源声明不等于操作系统硬限制；Spilling 不能解决 Python Heap 或 GPU 显存 OOM。`ds.stats()` 提供执行统计，实时故障仍需 Dashboard、日志与告警。
+
+### 六、与 Flink Checkpoint 的边界
+
+| 能力 | Ray Data | Flink |
+| --- | --- | --- |
+| 计算故障恢复 | Task / Actor 相关重试与恢复机制，取决于配置 | 按故障恢复策略重启与恢复任务 |
+| 持久化续跑 | 当前仓库已有 `CheckpointConfig`；需核对安装版本、支持的数据源/算子/Sink 和 ID 要求，也可设计分片提交 | 从有效 Checkpoint / Savepoint 恢复状态与进度 |
+| 端到端 Exactly-Once | 需要验证所用恢复机制与外部提交协议的组合语义 | 同样依赖 Source / Sink 的一致性能力及配置 |
+
+当前仓库的 Checkpoint 支持按记录 ID 跟踪，配置要求包括稳定唯一 ID 等条件；不能因此推定任意 JSONL 流水线都能直接续跑，也不能把它等同于 Flink 的通用有状态流 Checkpoint。生产任务应针对实际版本做故障注入验证：计算中断、写出中断、提交前后崩溃，以及两个 Job 同时提交同一分片。
