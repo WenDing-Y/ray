@@ -746,7 +746,66 @@ ds = (
 
 Ray Data 的任务重试不等于 Flink Checkpoint 式端到端作业恢复。当前仓库已有 `CheckpointConfig`，是否可用及其恢复范围需按实际版本、输入 ID 和所用算子、数据源、Sink 核对，不能假定任意流水线都自动续跑。
 
-生产环境通常需要设计 **分片处理 + 持久化进度 + 幂等提交**，也可以在适用时结合内置 Checkpoint。
+#### 1. 推荐方案：Ray Data 原生 Checkpoint
+
+对于安装版本支持的、行独立的 map / filter 类流水线，可以优先评估基于行 ID 的原生 Checkpoint，减少自行维护进度的代码。当前仓库已提供 `CheckpointConfig`；是否支持应以实际安装版本为准，不能仅凭“2026 年后”判断。
+
+下面使用可重读的 Parquet 输入，业务处理始终保留 `id`：
+
+```python
+import ray
+from ray.data import DataContext
+from ray.data.checkpoint import CheckpointConfig
+
+ray.init(address="auto")
+
+ctx = DataContext.get_current()
+ctx.checkpoint_config = CheckpointConfig(
+    id_column="id",  # 全局唯一、非空、稳定，处理过程中保留。
+    checkpoint_path="s3://bucket/job-001/checkpoint/",
+    delete_checkpoint_on_success=False,
+)
+
+
+def your_process_fn(batch):
+    return {
+        "id": batch["id"],
+        "text": [text.strip() for text in batch["text"]],
+    }
+
+
+ds = ray.data.read_parquet("s3://bucket/input/")
+ds = ds.map_batches(
+    your_process_fn,
+    batch_size=256,
+    batch_format="numpy",
+)
+ds.write_parquet("s3://bucket/job-001/output/", mode="append")
+```
+
+**工作原理：**
+
+1. 处理数据并成功写出后，提交相应行 ID 的 Checkpoint。
+2. Job 崩溃后，用相同输入、处理逻辑、输出和 Checkpoint 路径重新提交。
+3. 框架在支持的读取路径中排除已提交 ID，继续处理尚未提交的数据。
+
+当前仓库的文件 Sink 实现还包含 pending Checkpoint 与写出后的提交，以及恢复时的未提交文件清理；不应简单实现为两个互不关联的“写文件、写 ID”操作。
+
+如果前 900GB 的结果及对应 Checkpoint 都已成功提交，续跑可跳过这些行的下游处理，主要补跑剩余数据；**不保证完全不用重新扫描输入，也不保证按字节恰好只读剩下 100GB**。已计算但未成功提交的部分仍可能重算。
+
+**关键约束：**
+
+- 输入可重读且保持一致，每行具有全局唯一、稳定的 ID；模型、处理版本和语义也应保持一致。
+- 转换必须保留 ID。优先用于行独立处理；聚合、Join、行复制等会改变 ID 对应关系，需另外核对支持范围。过滤掉的记录也不能直接视为已经写出并记录了完成状态。
+- 输出使用 `append`，不要在续跑时覆盖或删除已提交输出。`append` 本身并不提供去重能力。
+- Checkpoint 和输出路径应隔离不同逻辑作业；不要让独立 Job 未经协调地同时使用同一套路径。
+- `delete_checkpoint_on_success=False` 会保留进度；确认结果后再清理。只删除 Checkpoint、却保留旧输出再追加重跑，可能产生重复。
+- S3、OSS 或文件系统必须具备实际版本所需的适配、权限和集群访问能力；文件路径应使用共享网络文件系统，不能依赖单节点 `/tmp`。
+- 写库、外部模型调用等副作用仍需幂等。上线前验证“写出成功但提交中断”等故障窗口，不能把 Checkpoint 扩大解释为任意 Sink 的 Exactly-Once 保证。
+
+#### 2. 自定义方案：分片进度与幂等提交
+
+原生 Checkpoint 不适用，或需要自定义外部提交协议时，可设计 **分片处理 + 持久化进度 + 幂等提交**。
 
 例如把 1TB 数据分成 100 个逻辑分片，每个约 10GB：
 
