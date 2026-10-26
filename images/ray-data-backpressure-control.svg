@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-label="反压控制：限制生产，等待下游消化">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="650" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">反压控制：限制生产，等待下游消化</text>
+<rect x="180" y="95" width="740" height="85" rx="12" fill="#ffedd5" stroke="#cbd5e1"/>
+<text x="550.0" y="128" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">① Tokenize 消费不足，队列与内存压力增长</text>
+<text x="550.0" y="160" text-anchor="middle" font-size="17" fill="#475569">Executor 结合队列、资源预算和背压策略判断</text>
+<rect x="180" y="220" width="740" height="85" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="550.0" y="253" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">② 减少上游新任务提交，控制输出推进</text>
+<text x="550.0" y="285" text-anchor="middle" font-size="17" fill="#475569">已运行任务不一定立即停止，内存仍可能暂时上升</text>
+<rect x="180" y="345" width="740" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="550.0" y="378" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">③ 下游继续消费，积压逐步减少</text>
+<text x="550.0" y="410" text-anchor="middle" font-size="17" fill="#475569">已有 Block 被消费，相关资源得以释放</text>
+<rect x="180" y="470" width="740" height="85" rx="12" fill="#dcfce7" stroke="#cbd5e1"/>
+<text x="550.0" y="503" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">④ 条件允许时，上游恢复推进</text>
+<text x="550.0" y="535" text-anchor="middle" font-size="17" fill="#475569">不是固定百分比阈值触发，也不保证完全避免 OOM</text>
+<path d="M550 180V210" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M550 305V335" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M550 430V460" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M920 510H1010V135H930" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<text x="550" y="608" text-anchor="middle" font-size="18" fill="#475569">优化目标是下游瓶颈；Spilling 只是把已有对象转移到磁盘。</text>
+</g></svg>

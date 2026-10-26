@@ -1060,3 +1060,176 @@ cleaned.write_parquet("s3://bucket/cleaned/")
 | 大规模数据，多次复用 | S3 / Parquet 持久化 |
 | 需要跨 Job 复用 | S3 / Parquet |
 | 需要故障恢复 | 持久化 + 分片进度管理，或适用的原生 Checkpoint |
+
+## 第九题：Ray Data Pipeline 中的反压（Backpressure）是什么？
+
+当下游 Operator 的处理速度跟不上上游时，Ray Data 会限制上游生产数据，防止中间 Block 无限堆积并耗尽内存。
+
+它与 Flink 的反压思想相似，但实现机制不同：Ray Data 主要通过 **Executor 调度、资源预算和输出控制**调节数据流量。
+
+### 一、先看一个例子
+
+```python
+import ray
+
+ray.init()
+
+# clean_batch、tokenize_batch 需要自行定义。
+ds = ray.data.read_json("s3://bucket/input/")
+ds = ds.map_batches(clean_batch, batch_size=1000)
+ds = ds.map_batches(tokenize_batch, batch_size=1000)
+ds.write_parquet("s3://bucket/output/")
+```
+
+假设各阶段的独立处理能力如下。为方便比较，按同一数据口径计量，并忽略过滤和数据膨胀：
+
+![Tokenize 瓶颈与中间数据积压](images/ray-data-backpressure-pipeline.svg)
+
+- Read：1,000 MB/s。
+- Clean：800 MB/s。
+- Tokenize：100 MB/s，是此例的瓶颈。
+- Write：500 MB/s。
+
+如果不限制上游，Clean 持续以 800 MB/s 输出，而 Tokenize 只能消费 100 MB/s：
+
+```text
+积压速度 = 800 − 100 = 700 MB/s
+一分钟积压量 = 700 × 60 = 42,000 MB ≈ 42 GB
+```
+
+这是无反压、持续生产条件下的估算。实际积压还受 Block 大小、任务并发、数据膨胀和对象释放速度影响；物理算子也可能融合。
+
+### 二、Ray Data 如何实现反压？
+
+![反压限制上游，队列消化后再恢复](images/ray-data-backpressure-control.svg)
+
+简化过程：
+
+1. **上游产生 Block**：Read、Clean 的输出进入算子间队列，等待下游消费。
+2. **下游消费不足**：Tokenize 较慢，待消费 Block 增多，Object Store 压力升高。
+3. **Executor 限制上游**：根据资源预算、队列和背压策略，减少或暂停上游新任务提交，并控制输出接收。
+4. **下游消化积压**：Tokenize 继续处理输入；缓冲和资源条件允许后，上游恢复推进。
+
+反压不只是简单地让上游 Worker 阻塞。**限制新任务提交，也不等于立即暂停已经运行的 Task。** 已运行的 Clean Task 仍可能继续计算和产生输出；流式输出缓冲达到限制时，也可能进一步约束生产者输出。
+
+因此，开始反压后内存仍可能短暂上升，不能理解为内存使用量立刻停止增长。
+
+### 三、反压的关键机制
+
+| 机制 | 作用 |
+| --- | --- |
+| Resource-based Backpressure | 根据资源使用和预算判断是否允许继续调度 |
+| Concurrency Cap | 限制 Operator 的任务或 Actor 执行规模 |
+| Output Queue 控制 | 限制未消费输出的积压 |
+| 算子调度优先级 | 在可执行算子中结合队列、资源与下游需求选择执行对象 |
+| Streaming Output Backpressure | 限制运行中任务产生过多未消费输出，约束输出读取和缓冲 |
+
+具体策略和默认配置随 Ray 版本变化。部分执行策略会偏向输出队列较小的算子，但不能理解为不考虑资源和反压条件、始终按队列长度排序，也不是所有情况下都无条件优先下游。
+
+### 四、反压和 Object Spilling 有什么区别？
+
+**反压控制继续生产，Spilling 转移已经产生的对象。**
+
+| 对比 | Backpressure | Object Spilling |
+| --- | --- | --- |
+| 触发原因 | 下游消费慢、资源或缓冲预算不足等 | Object Store 内存压力 |
+| 处理方式 | 限制新任务或输出 | 将符合条件的对象溢写到磁盘 |
+| 目的 | 减少继续积压 | 缓解对象存储内存压力 |
+| 性能影响 | 可能降低上游吞吐，避免无效堆积 | 增加磁盘写入及恢复 I/O |
+| 是否直接消除瓶颈 | 否 | 否 |
+
+两者不能保证绝对不会 OOM：Worker Python Heap 或 GPU 显存不足仍可能失败，磁盘空间不足也会影响溢写和恢复。
+
+### 五、如何观察是否发生反压？
+
+结合执行进度、日志、Dashboard 和执行统计判断：
+
+```python
+ds.write_parquet("/tmp/output")
+print(ds.stats())
+```
+
+| 观察项 | 排查重点 |
+| --- | --- |
+| `[backpressure]` | 对应 Operator 正受到执行或输出限制；沿流水线检查下游 |
+| Object Store / `obj_store_mem` 等指标 | 中间 Block 是否积压，资源是否紧张 |
+| 运行任务数 / `num_tasks_running` 等指标 | 上游提交受限后，运行任务是否逐步减少 |
+| Pending Task | 是否存在资源或放置约束；与 Executor 尚未提交任务要区分 |
+| 输出队列 / 下游吞吐 | 哪个阶段消费不足，队列是否持续增长 |
+| Spilled Bytes、磁盘 I/O | 是否出现大量溢写与恢复 |
+
+指标名称和展示方式因版本而异。`stats()` 是执行统计，不能替代实时监控；Task 数量下降也不能单独证明发生反压。
+
+### 六、如何优化？
+
+针对 Tokenize 瓶颈，可以使用可调用类复用 Tokenizer：
+
+```python
+# Tokenizer 需要实现 __init__ 和 __call__，并匹配 NumPy 输入格式。
+ds = ds.map_batches(
+    Tokenizer,
+    batch_size=1000,
+    batch_format="numpy",
+    concurrency=4,
+    num_cpus=1,
+)
+```
+
+这里配置固定为 4 个计算 Actor，并不代表达到 4 倍吞吐。应进一步检查：
+
+- CPU 是否真正饱和，是否有线程竞争或外部 I/O 等待。
+- Batch 是否适合向量化或批量分词，内存是否足够。
+- 是否重复初始化 Tokenizer，能否复用昂贵资源。
+- 是否有超长文本或其他计算倾斜。
+- 提高并发后，下游写出或对象传输是否成为新瓶颈。
+
+**反压是保护机制，不是需要直接关闭的故障。** 应优化造成反压的瓶颈，而不是盲目放大上游并发或缓冲区。
+
+### 七、和 Flink 反压的核心区别
+
+| 对比 | Flink | Ray Data |
+| --- | --- | --- |
+| 主要执行模型 | 持续运行的算子任务，支持流和批 | 基于 Block、Task / Actor 的流式执行 |
+| 反压传播 | 网络缓冲区、数据传输及算子处理链 | Executor 调度、资源预算和输出控制 |
+| 上游受限方式 | 发送或输出受阻 | 减少新任务提交、限制输出推进 |
+| 中间数据 | 网络缓冲区及算子状态等 | Object Store 中的 Block 及执行缓冲 |
+| 典型用途 | 无界流和有界批处理 | 大规模有界数据与 AI 数据处理 |
+
+Flink 更偏向运行中算子间的数据流控制；Ray Data 更强调 Executor 对任务调度和中间 Block 的流量控制，两者都可能在输出缓冲处限制生产者。
+
+### 八、场景题：Clean 任务减少，是反压吗？
+
+假设集群有 3 个 Node，每个提供 4 核任务 CPU：
+
+```text
+Read → Clean → Tokenize → Write
+```
+
+观察到：
+
+- Read 很快，CPU 利用率不高。
+- Clean 的运行 Task 数量逐渐减少。
+- Tokenize 的 12 个 Task 一直执行。
+- Tokenize 前积压大量 Block，Object Store 使用率达到 85%。
+
+#### 1. 为什么 Clean 的 Task 数量减少？
+
+**这些现象与反压一致，但需结合指标确认。** Tokenize 消费跟不上，Executor 限制 Clean 的新任务提交；已运行的任务陆续结束，运行任务数就会下降。
+
+Clean Task 减少也可能是输入耗尽、资源不足或其他限制导致，应检查 `[backpressure]`、队列趋势和资源预算。85% 不是通用的反压触发阈值。
+
+此外，12 个 Tokenize Task 若各占 1 CPU，已占满该集群的 12 个逻辑 CPU。Clean 缺少可用 CPU 也是需要同时检查的原因；Task 一直 Running 不代表 CPU 一定持续满载。
+
+#### 2. 增加 CPU 节点一定能解决吗？
+
+**不一定，取决于 Tokenize 瓶颈能否通过提高并行度缓解。**
+
+| 瓶颈 | 增加 CPU 节点是否有效 |
+| --- | --- |
+| CPU 密集，输入足够且并发可以提高 | 可能有效 |
+| `concurrency=12` 已固定计算池规模 | 单纯扩容不会自动突破此并发限制 |
+| 每批重复初始化 Tokenizer | 优先复用初始化；扩容可能只是增加资源消耗 |
+| 外部服务限流、磁盘或网络 I/O 受限 | 扩 CPU 通常不能直接解决 |
+| 少数不可拆分的长尾任务 | 不一定有效，需调整数据和任务粒度 |
+
+判断顺序是：**确认瓶颈 → 检查能否扩大有效并发 → 评估内存、I/O 和下游能力 → 扩容后复测吞吐。**

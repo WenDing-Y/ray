@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="460" viewBox="0 0 1100 460" role="img" aria-label="下游慢，放任上游生产就会积压">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="460" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">下游慢，放任上游生产就会积压</text>
+<rect x="35" y="110" width="205" height="100" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="137.5" y="143" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Read JSON</text>
+<text x="137.5" y="175" text-anchor="middle" font-size="17" fill="#475569">1,000 MB/s</text>
+<rect x="310" y="110" width="205" height="100" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="412.5" y="143" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Clean</text>
+<text x="412.5" y="175" text-anchor="middle" font-size="17" fill="#475569">800 MB/s</text>
+<rect x="585" y="110" width="205" height="100" rx="12" fill="#ffedd5" stroke="#cbd5e1"/>
+<text x="687.5" y="143" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Tokenize</text>
+<text x="687.5" y="175" text-anchor="middle" font-size="17" fill="#475569">100 MB/s · 瓶颈</text>
+<rect x="860" y="110" width="205" height="100" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="962.5" y="143" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Write Parquet</text>
+<text x="962.5" y="175" text-anchor="middle" font-size="17" fill="#475569">500 MB/s</text>
+<path d="M240 160H305" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M515 160H580" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M790 160H855" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="230" y="270" width="640" height="85" rx="12" fill="#fef3c7" stroke="#cbd5e1"/>
+<text x="550.0" y="303" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Clean → Tokenize：待消费 Block 积压</text>
+<text x="550.0" y="335" text-anchor="middle" font-size="17" fill="#475569">无反压时：800 − 100 = 700 MB/s</text>
+<path d="M550 170V260" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<text x="550" y="401" text-anchor="middle" font-size="18" fill="#64748b">示例假设同一数据口径、持续生产且无膨胀；一分钟约积压 42 GB。</text>
+</g></svg>
