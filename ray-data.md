@@ -1684,3 +1684,129 @@ Packing 将多条短样本组织成更长的训练序列，减少 Padding。它�
 Ray Data + vLLM 批量推理可以从原始文本开始，由集成处理器的预处理阶段或推理引擎完成 Tokenize。具体由哪一层执行取决于接口和配置，**不需要每个任务都先单独保存一份 Tokenized Dataset，也不要对已经是 Token ID 的输入重复分词。**
 
 例如聊天模型常先应用 Chat Template，再 Tokenize；只对裸文本分词、却遗漏对话模板，可能与目标模型要求不一致。
+
+## 第十三题：Ray Data 如何调度 GPU 数据处理任务？
+
+核心是通过 **`num_gpus` 声明资源需求，Ray Core 选择满足要求的节点和设备，Ray Data 组织数据处理流水线**。
+
+LLM 推理、Embedding 等需要反复使用模型的场景，通常采用 `map_batches()` + GPU Actor Pool，复用初始化结果。
+
+### 一、GPU 任务调度流程
+
+假设集群提供：
+
+| Worker Node | CPU | GPU |
+| --- | ---: | ---: |
+| Node A | 4 | 0 |
+| Node B | 8 | 2 |
+| Node C | 8 | 2 |
+
+配置固定 4 个 Actor，每个申请 1 GPU：
+
+![Ray Data GPU Actor 调度流程](images/ray-data-gpu-scheduling.svg)
+
+1. Ray Data Executor 管理 Pipeline 的执行。
+2. GPU 算子向 Ray Core 请求创建 Actor。
+3. Ray Core 检查 `num_gpus=1` 以及其他资源、放置约束。
+4. 资源均可用时，Node B、C 各承载两个 Actor；无 GPU 的 Node A 不能满足该请求，但可以执行适合它的 CPU 工作。
+5. Ray Data 将输入数据分配给 Actor，由其分批调用模型。
+6. Actor 返回结果后继续处理后续输入，直到执行结束。
+
+Ray Core 通常通过 `CUDA_VISIBLE_DEVICES` 等环境变量限制进程可见设备。**分配设备不等于让模型自动用 GPU**，用户仍需在代码中将模型和数据移动到 CUDA。
+
+### 二、完整代码示例
+
+下面用随机生成的 128 维特征和线性层演示调度，不是真正训练好的文本情感分类模型。生产场景应加载相应模型权重，并准备匹配的输入。
+
+```python
+import numpy as np
+import ray
+import torch
+
+ray.init(address="auto")
+
+
+class GPUPredictor:
+    def __init__(self):
+        self.device = torch.device("cuda")
+        self.model = torch.nn.Linear(128, 2).to(self.device)
+        self.model.eval()
+
+    def __call__(self, batch):
+        # 将每行向量组成 [batch_rows, 128] 的 CPU 数组。
+        features = np.stack(batch["features"]).astype(np.float32, copy=False)
+        x = torch.as_tensor(features, dtype=torch.float32, device=self.device)
+        with torch.inference_mode():
+            y = self.model(x)
+        # 返回 CPU 数据，便于下游处理和写出。
+        return {"prediction": y.argmax(dim=1).cpu().numpy()}
+
+
+rng = np.random.default_rng(42)
+ds = ray.data.from_items(
+    [{"features": rng.random(128).tolist()} for _ in range(10_000)]
+)
+result = ds.map_batches(
+    GPUPredictor,
+    batch_size=64,
+    batch_format="numpy",
+    num_gpus=1,
+    compute=ray.data.ActorPoolStrategy(size=4),
+)
+
+# 物化确保执行预测；不能仅凭 count() 判断模型一定运行过。
+predicted = result.materialize()
+print(predicted.count())  # 10000
+print(predicted.take(3))
+```
+
+需要可连接的 Ray 集群、兼容的 NumPy / Ray Data / CUDA 版 PyTorch，以及总计可用的 4 个 GPU 资源单位。示例用物化验证小规模结果；大规模推理可直接写出，避免为计数保留全部结果。
+
+| 参数 | 含义 |
+| --- | --- |
+| `num_gpus=1` | 每个 Actor 申请 1 个逻辑 GPU 资源单位 |
+| `ActorPoolStrategy(size=4)` | 固定大小为 4 的计算 Actor 池 |
+| `batch_size=64` | 每次 UDF 调用的目标输入行数，尾批次可能较小 |
+| `batch_format="numpy"` | 明确传入列式 NumPy 批次 |
+
+资源满足时，4 个 Actor 各持有自己的模型，反复处理 Batch；模型初始化通常每个 Actor 生命周期一次，重启后会重新初始化。
+
+当前仓库支持 `compute=ActorPoolStrategy(...)`，并已将 `map_batches()` 的 `concurrency` 参数标记为弃用；实际安装版本应按对应 API 使用，不要同时混用两套池配置。
+
+### 三、GPU Task 与 GPU Actor 的区别
+
+| 对比 | GPU Task | GPU Actor |
+| --- | --- | --- |
+| 用户函数形式 | 普通函数 | 可调用类 |
+| 状态 | 不提供可靠的跨任务模型实例状态 | 实例存活期间可保留模型 |
+| 模型初始化 | 取决于函数写法，无自动跨任务复用保证 | 通常在 `__init__()` 中加载 |
+| GPU 资源占用 | 按任务执行需求分配 | Actor 生命周期内持有申请的资源 |
+| 典型场景 | 独立 GPU 数据转换 | LLM、Embedding、反复调用模型 |
+| 选择建议 | 简单无状态操作可用 | 昂贵模型初始化场景优先 |
+
+一个 Task 内可能处理多个 Batch，不能把每批调用都等同于一个 Task。GPU Task 的 Worker 是否复用还受 Ray 版本和 `max_calls` 等配置影响，不能照搬 CPU Worker 的复用假设。
+
+另外，`num_gpus=2` 只声明需要两个 GPU 资源单位，不会自动把一个模型分布到两张卡；多 GPU 模型并行仍需 vLLM、PyTorch 等框架配置。
+
+### 四、GPU 不够时会发生什么？
+
+假设集群只有 2 个可用 GPU，却要求：
+
+```python
+compute = ray.data.ActorPoolStrategy(size=4)
+# map_batches(..., compute=compute, num_gpus=1)
+```
+
+Ray 不会凭空提供 4 张 GPU，也不会自动把每个 Actor 改成半张 GPU。通常只有两个 Actor 的完整 GPU 申请能够被满足，其余等待资源。
+
+**固定池可能等待满足启动条件，不能保证前两个 Actor 一定先处理完整个数据集。** Actor 长期持有 GPU，也不能假定处理几个 Batch 后会自动释放设备供其余 Actor 轮换。
+
+处理方式：
+
+- 固定集群：将池大小调至资源可满足的范围，例如 `size=2`。
+- 弹性池：根据业务和版本使用 `ActorPoolStrategy(min_size=1, max_size=4)`，允许从较小规模开始。
+- 集群扩容：需配置合适的 GPU 节点类型或 KubeRay Worker 组，并且云配额、节点供应、GPU 驱动与设备插件可用。
+
+即使调度成功，也可能发生 CUDA OOM。`num_gpus` 控制逻辑资源分配，不是显存硬隔离；小数 GPU 请求也不会自动为模型建立显存分区。
+
+**池大小决定多少实例并行，`num_gpus` 决定每个实例申请多少 GPU，`batch_size` 决定每次处理多少记录。** 三者共同影响吞吐、显存和资源利用率；模型输入长度、输出长度及引擎内部并发同样需要评估。
