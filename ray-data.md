@@ -1408,3 +1408,143 @@ Actor 会复用实例，`self.results` 因此不断增长，即使 Batch 很小�
 | 反复溢写后出现磁盘错误 | 磁盘容量或 I/O 不足 | 检查溢写目录空间和挂载，减少工作集 |
 
 优化后用相同输入复测：既要确认 OOM 消失，也要观察峰值、溢写量、重试次数和吞吐。**增加节点只有在任务能分散、单节点工作集下降时才可能有效，不能直接解决一个不可拆分的超大 Batch 或无界缓存。**
+
+## 第十一题：Ray Data 和 Ray Serve 做大模型推理有什么区别？
+
+两者都能结合 vLLM 使用 Ray 集群的 GPU，但解决的问题不同：
+
+- **Ray Data：离线批量推理**，重点是高效处理海量数据。
+- **Ray Serve：在线实时推理**，重点是稳定地响应请求，控制延迟和可用性。
+
+任务调度、数据处理模型和优化目标因此不同。
+
+### 一、核心区别
+
+| 对比维度 | Ray Data | Ray Serve |
+| --- | --- | --- |
+| 核心定位 | 分布式数据处理 | 在线模型服务 |
+| 典型场景 | 1,000 万条文本批量推理 | 实时聊天、问答接口 |
+| 数据来源 | S3、Parquet、JSONL 等 | HTTP 请求、应用调用 |
+| 任务触发 | 消费 Dataset，执行数据计划 | 请求到达 |
+| 执行方式 | 批处理流水线 | 长期运行的服务 |
+| 模型加载 | 通常通过 Actor 复用模型 | 通过 Deployment Replica 复用模型 |
+| 并发控制 | Block、Task、Actor 池及引擎并发 | Replica 数、请求并发、批处理及引擎调度 |
+| 主要优化目标 | 吞吐量、总处理时间、单位数据成本 | 延迟、吞吐量、可用性 |
+| 典型扩容方式 | 增加推理实例的数据并行度 | 增加 Replica 或模型服务实例 |
+| 故障处理 | 计算重试、数据重建与作业恢复设计 | Replica 恢复；请求重试需结合客户端及服务配置 |
+
+离线、在线是主要定位，不是绝对边界。Ray Data 可以流式执行有界批处理；Ray Serve 也支持批量请求和动态批处理。Ray Data 的“流式执行”不等于持续的在线请求服务。
+
+### 二、架构上的区别
+
+![Ray Data 批量推理与 Ray Serve 在线推理架构对比](images/ray-data-vs-serve.svg)
+
+#### Ray Data：数据驱动的批量推理
+
+S3 / Parquet / JSONL → Dataset / Blocks → 多个推理 Actor → 批量结果写入 S3。
+
+核心是把大量数据分配给执行单元，让 GPU 持续有工作，提高整体处理效率。
+
+#### Ray Serve：请求驱动的在线推理
+
+用户 / HTTP 请求 → Proxy 与请求路由 → Replica → 返回结果或流式 Token。
+
+Proxy 是 HTTP 入口，请求路由负责选择 Replica；通过 DeploymentHandle 调用服务也可以走请求路由，不必经过 HTTP。这里是概念流程，Router 不应理解为所有请求必经的单一独立进程。
+
+共同点是：**Ray Data 的推理 Actor 和 Ray Serve 的 Replica 都可长期持有模型**。Serve Replica 通常由 Ray Actor 承载；复杂推理实例还可能涉及多个 GPU Worker。
+
+区别在于上层控制：Ray Data 的执行引擎调度数据块与计算，Ray Serve 的服务层管理请求路由、Replica 和请求生命周期。
+
+### 三、大模型推理实例
+
+#### 场景 A：Ray Data 批量判断评论情感
+
+假设有 1,000 万条评论，使用 Qwen 模型进行情感分析：
+
+```python
+import ray
+from ray.data.llm import vLLMEngineProcessorConfig, build_processor
+
+ray.init()
+
+ds = ray.data.read_parquet("s3://bucket/comments/")
+config = vLLMEngineProcessorConfig(
+    model_source="Qwen/Qwen2.5-7B-Instruct",
+    concurrency=4,
+    batch_size=64,
+)
+processor = build_processor(
+    config,
+    preprocess=lambda row: {
+        "messages": [
+            {"role": "user", "content": f"判断情感倾向：{row['text']}"}
+        ],
+        "sampling_params": {
+            "temperature": 0,
+            "max_tokens": 32,
+        },
+    },
+    postprocess=lambda row: {"result": row["generated_text"]},
+)
+result = processor(ds)
+result.write_parquet("s3://bucket/results/")
+```
+
+代码按当前仓库接口使用 `model_source`；实际安装版本需核对接口，并安装兼容的 Ray Data LLM、vLLM、GPU 运行依赖。集群还需具备足够 GPU / 显存、模型访问权限和 S3 权限。
+
+执行过程：
+
+1. 从 S3 读取数据并形成 Block。
+2. Ray Data LLM 将数据送入推理阶段。
+3. vLLM 加载模型并处理批量输入。
+4. 结果由 Ray Data 写回 S3。
+
+重点是整体吞吐，而非尽快返回某一条评论。`batch_size` 是数据处理批次，不等于 vLLM 内部同时生成的序列数；引擎还会进行自己的调度。当前仓库该配置的 `concurrency=4` 表示相关阶段的并发规模上限，不应直接套用普通 `map_batches()` 固定 Actor 池的解释。
+
+本例只保存生成结果；生产任务应按需保留稳定记录 ID，便于关联输入、校验和恢复。
+
+#### 场景 B：Ray Serve 提供在线聊天接口
+
+假设应用提供接收下列请求的接口：
+
+```json
+{
+  "prompt": "介绍一下 Ray Data"
+}
+```
+
+这是应用自定义请求示例；使用 OpenAI 兼容接口时，应按对应服务的 `model`、`messages` 等请求协议调用。
+
+典型流程：
+
+1. HTTP Proxy 接收请求。
+2. 请求路由选择合适的 Replica。
+3. Replica 调用 vLLM 生成内容。
+4. 若配置流式响应，将生成的 Token 持续返回用户。
+
+重点指标：
+
+| 指标 | 关注点 |
+| --- | --- |
+| TTFT（Time To First Token） | 首 Token 延迟，通常包含排队、预处理和 Prefill 等开销 |
+| TPOT（Time Per Output Token） | 首 Token 后的平均输出 Token 间隔；统计口径需统一 |
+| QPS | 每秒请求数，需结合输入输出长度和延迟目标解释 |
+| 排队时间、P95 / P99 延迟 | 高负载下的尾延迟与服务体验 |
+| GPU 利用率、KV Cache | 推理资源与显存压力 |
+
+Ray Serve 提供请求路由、Replica 管理和扩缩容、流式响应等能力；自动扩缩容和请求重试并非配置一个服务后就自动满足所有场景，需要结合模型启动成本、并发和客户端策略设计。
+
+### 四、它们能不能一起使用？
+
+可以。例如，白天提供在线聊天，每晚批量分析历史聊天记录。
+
+![Ray Data 与 Ray Serve 共用集群及调用关系](images/ray-data-serve-together.svg)
+
+两种方式：
+
+1. **各自加载推理引擎**：Data 批处理和 Serve 在线服务使用同一 Ray 集群的不同资源池，分别优化吞吐与延迟。
+2. **Data 调用 Serve**：Data 读取、预处理并提交批量请求到已部署的 Serve 服务，共用其模型实例。当前仓库的 Ray Data LLM 提供 Serve Deployment 和 HTTP 请求处理器，具体接口以安装版本为准。
+
+第二种方式下，Data 是服务调用方，不会因为发出更多批量请求就自动增加推理 GPU。离线与在线请求共用服务时，还需限流、并发控制、超时重试和容量隔离，避免离线积压挤占在线请求。
+
+**共用集群不等于应共抢 GPU。** 可通过独立 Worker 节点组、资源标签与放置约束划分资源，并设置扩缩容范围；同时观察 GPU 显存、KV Cache、网络与对象存储压力。Ray 的 GPU 逻辑资源声明不能代替显存容量管理。

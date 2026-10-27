@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760" role="img" aria-label="Ray Data 与 Ray Serve：推理引擎相似，上层目标不同">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="760" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">Ray Data 与 Ray Serve：推理引擎相似，上层目标不同</text>
+<rect x="35" y="90" width="500" height="80" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="285.0" y="122" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Ray Data：数据驱动</text>
+<text x="285.0" y="151" text-anchor="middle" font-size="17" fill="#475569">目标：整体吞吐、总耗时、单位成本</text>
+<rect x="565" y="90" width="500" height="80" rx="12" fill="#dcfce7" stroke="#cbd5e1"/>
+<text x="815.0" y="122" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">Ray Serve：请求驱动</text>
+<text x="815.0" y="151" text-anchor="middle" font-size="17" fill="#475569">目标：响应延迟、吞吐、可用性</text>
+<rect x="65" y="205" width="440" height="80" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="285.0" y="237" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">S3 / Parquet / JSONL</text>
+<text x="285.0" y="266" text-anchor="middle" font-size="17" fill="#475569">Dataset → Blocks</text>
+<rect x="595" y="205" width="440" height="80" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="815.0" y="237" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">用户请求 / 应用调用</text>
+<text x="815.0" y="266" text-anchor="middle" font-size="17" fill="#475569">HTTP Proxy / DeploymentHandle</text>
+<rect x="65" y="320" width="440" height="80" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="285.0" y="352" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">数据执行引擎</text>
+<text x="285.0" y="381" text-anchor="middle" font-size="17" fill="#475569">调度算子、Task / Actor 和数据流</text>
+<rect x="595" y="320" width="440" height="80" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="815.0" y="352" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">请求路由与 Replica 管理</text>
+<text x="815.0" y="381" text-anchor="middle" font-size="17" fill="#475569">排队、分发、并发与扩缩容</text>
+<rect x="65" y="445" width="140" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="135.0" y="477" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Actor 1</text>
+<text x="135.0" y="506" text-anchor="middle" font-size="17" fill="#475569">GPU / vLLM</text>
+<rect x="215" y="445" width="140" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="285.0" y="477" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Actor 2</text>
+<text x="285.0" y="506" text-anchor="middle" font-size="17" fill="#475569">GPU / vLLM</text>
+<rect x="365" y="445" width="140" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="435.0" y="477" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Actor 3</text>
+<text x="435.0" y="506" text-anchor="middle" font-size="17" fill="#475569">GPU / vLLM</text>
+<path d="M285 400V420H135V440" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M285 400V420H285V440" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M285 400V420H435V440" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="595" y="445" width="140" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="665.0" y="477" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Replica 1</text>
+<text x="665.0" y="506" text-anchor="middle" font-size="17" fill="#475569">GPU / vLLM</text>
+<rect x="745" y="445" width="140" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="815.0" y="477" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Replica 2</text>
+<text x="815.0" y="506" text-anchor="middle" font-size="17" fill="#475569">GPU / vLLM</text>
+<rect x="895" y="445" width="140" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="965.0" y="477" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Replica 3</text>
+<text x="965.0" y="506" text-anchor="middle" font-size="17" fill="#475569">GPU / vLLM</text>
+<path d="M815 400V420H665V440" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M815 400V420H815V440" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M815 400V420H965V440" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="65" y="575" width="440" height="80" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="285.0" y="607" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">批量结果写入 S3</text>
+<text x="285.0" y="636" text-anchor="middle" font-size="17" fill="#475569">由下游批任务读取</text>
+<rect x="595" y="575" width="440" height="80" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="815.0" y="607" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">返回结果 / 流式 Token</text>
+<text x="815.0" y="636" text-anchor="middle" font-size="17" fill="#475569">由调用方消费</text>
+<path d="M285 170V200" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M285 285V315" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M135 530V550H285V570" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M285 530V550H285V570" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M435 530V550H285V570" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M815 170V200" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M815 285V315" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M665 530V550H815V570" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M815 530V550H815V570" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M965 530V550H815V570" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<text x="550" y="708" text-anchor="middle" font-size="18" fill="#64748b">实例和连线均为概念示意；模型并行、资源需求和引擎调度取决于实际配置。</text>
+</g></svg>
