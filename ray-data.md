@@ -1548,3 +1548,139 @@ Ray Serve 提供请求路由、Replica 管理和扩缩容、流式响应等能�
 第二种方式下，Data 是服务调用方，不会因为发出更多批量请求就自动增加推理 GPU。离线与在线请求共用服务时，还需限流、并发控制、超时重试和容量隔离，避免离线积压挤占在线请求。
 
 **共用集群不等于应共抢 GPU。** 可通过独立 Worker 节点组、资源标签与放置约束划分资源，并设置扩缩容范围；同时观察 GPU 显存、KV Cache、网络与对象存储压力。Ray 的 GPU 逻辑资源声明不能代替显存容量管理。
+
+## 第十二题：结合 Ray，Tokenize 之后的数据主要用在哪里？
+
+结合 Ray Data 与大模型数据处理，主要有三个方向：
+
+- **模型训练（Pretrain / SFT）**：把文本转换为 Token ID，构造模型输入和训练目标。
+- **模型推理（Inference）**：将 Prompt 转换为 Token ID，交给模型执行 Prefill / Decode。
+- **数据分析与预处理**：统计长度、过滤超长文本、按 Token 预算分批，以及进行 Packing。
+
+Ray Data 的典型用途是大规模训练数据预处理：将 TB 级原始文本转换并保存为 PyTorch、Ray Train 或其他训练框架能够读取的数据集。
+
+### 一、Ray Data Tokenize 的完整流程
+
+![Ray Data Tokenize 流程及数据用途](images/ray-data-tokenize-uses.svg)
+
+原始 JSONL / Parquet → Ray Data 清洗、过滤、Tokenize → 按任务截断、Packing 或构造标签 → 训练数据或分析结果。
+
+例如文本：
+
+```text
+我喜欢学习 Ray Data
+```
+
+分词后可能表示为：
+
+```json
+{
+  "input_ids": [151644, 1001, 2034, 8876, 151645],
+  "attention_mask": [1, 1, 1, 1, 1]
+}
+```
+
+ID 仅为示意，实际值由 Tokenizer、版本、特殊 Token 和模板决定。
+
+| 字段 | 用途 |
+| --- | --- |
+| `input_ids` | Token 在词表中的 ID，作为模型输入 |
+| `attention_mask` | 常见接口中标识有效 Token 与 Padding；复杂注意力边界可能需要额外结构 |
+| `labels` | 训练损失的目标，由任务和训练框架约定，不是 Tokenizer 必然生成的字段 |
+
+因果语言模型训练中，标签常由 Token ID 构造，并由模型或训练逻辑完成位置偏移；Padding 及 SFT 中不参与损失的 Prompt 位置通常设为忽略值，如 `-100`。不能对所有任务直接套用同一套 Label 规则。
+
+**此流程中的 Ray Data 负责分布式数据转换，不执行模型参数训练。** 训练由 PyTorch、Ray Train 等训练层完成。
+
+### 二、完整的 Ray Data Tokenize 示例
+
+假设有 1,000 万条记录，包含唯一的 `id` 和字符串列 `text`。通过 4 个 Actor 分词，再保存到 Parquet：
+
+```python
+import ray
+from transformers import AutoTokenizer
+
+ray.init(address="auto")
+
+
+class TokenizeBatch:
+    def __init__(self):
+        # 生产数据集应固定 tokenizer revision，并记录分词配置。
+        self.tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
+
+    def __call__(self, batch):
+        encoded = self.tokenizer(
+            batch["text"].tolist(),
+            padding=False,
+            truncation=True,
+            max_length=512,
+        )
+        return {
+            "id": batch["id"],
+            "input_ids": encoded["input_ids"],
+            "attention_mask": encoded["attention_mask"],
+            "token_count": [len(ids) for ids in encoded["input_ids"]],
+        }
+
+
+ds = ray.data.read_parquet("s3://bucket/raw-text/")
+ds = ds.filter(lambda row: isinstance(row["text"], str) and bool(row["text"].strip()))
+tokenized = ds.map_batches(
+    TokenizeBatch,
+    batch_size=256,
+    batch_format="numpy",
+    concurrency=4,
+    num_cpus=1,
+)
+tokenized.write_parquet("s3://bucket/tokenized/")
+print(tokenized.stats())
+```
+
+示例需要可连接的 Ray 集群、兼容依赖、模型和 S3 访问权限。`bert-base-chinese` 只是可替换的分词演示；训练具体 LLM 时，必须使用与目标模型匹配的 Tokenizer、特殊 Token 和对话模板。
+
+Ray Data 为可调用类配置 4 个计算 Actor，各自初始化并复用一个 Tokenizer。它们需要相应资源，但不代表必须运行在 4 个 Ray Node 上。
+
+代码输出变长 Token 列表，不提前 Padding；下游可按批动态 Padding 或执行 Packing。本例不构造 `labels`，截断后的 `token_count` 也不代表原始全文长度。
+
+```text
+S3 原始文本 → Dataset → 4 个 Tokenize Actor
+                         ↓
+                  Tokenized Dataset
+                         ↓
+                     S3 Parquet
+                         ↓
+             PyTorch / Ray Train / DeepSpeed 等
+```
+
+Parquet 中保存了 Token ID，不代表文件可以直接传给任意训练器：还需按其数据加载、张量类型、Padding 和标签协议适配。保存时记录模型与 Tokenizer revision、模板和截断配置，保证后续可复现。
+
+### 三、Tokenize 后为什么还需要 Packing？
+
+假设训练序列长度为 2,048，而样本平均只有 200 Token。**如果每条都单独 Padding 到 2,048**，有效 Token 占比仅约 `200 / 2048 = 9.8%`。
+
+![Padding 与 Packing 的示意对比](images/ray-data-token-packing.svg)
+
+Packing 将多条短样本组织成更长的训练序列，减少 Padding。它通常在 Tokenize 后进行，因为这时才知道准确的 Token 长度。
+
+但 Packing 不是简单拼接数组：
+
+- 需要定义 EOS / 分隔符、样本边界及剩余片段的处理规则。
+- 独立样本能否互相注意，取决于训练目标；需要隔离时，应使用训练框架支持的分段或块对角注意力等机制，普通全 1 的 `attention_mask` 不会自动隔离样本。
+- SFT 中还要保留回答区间的 Label Mask，不能让拼接破坏损失范围。
+- 位置编码、`position_ids` 和 Padding 规则要与模型及训练器匹配。
+
+图中的固定长度 Padding 是对比假设，不代表所有训练都会这样做。动态 Padding、长度分桶也能减少浪费；是否采用 Packing 应结合实际训练框架和目标决定。
+
+### 四、训练与推理中的区别
+
+| 对比项 | 模型训练 | 模型推理 |
+| --- | --- | --- |
+| Tokenize 位置 | 常由 Ray Data 等离线预处理，也可训练时进行 | 通常由推理服务或其预处理阶段执行；离线推理也可批量执行 |
+| 数据规模 | 可达 TB / PB 级数据集 | 单请求或大规模批量请求 |
+| 是否保存 Token ID | 常保存以便复用、减少重复分词 | 通常不长期保存，也有预分词输入等场景 |
+| 后续步骤 | Packing / Padding、构造 Label、训练 | Prefill、Decode，再将输出 Token 解码为文本 |
+| 优化目标 | 数据吞吐、质量和训练计算效率 | 请求延迟、推理吞吐与成本 |
+
+Ray Data + vLLM 批量推理可以从原始文本开始，由集成处理器的预处理阶段或推理引擎完成 Tokenize。具体由哪一层执行取决于接口和配置，**不需要每个任务都先单独保存一份 Tokenized Dataset，也不要对已经是 Token ID 的输入重复分词。**
+
+例如聊天模型常先应用 Chat Template，再 Tokenize；只对裸文本分词、却遗漏对话模板，可能与目标模型要求不一致。

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="710" viewBox="0 0 1100 710" role="img" aria-label="Tokenize 后的数据：训练输入、推理输入与数据分析">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="710" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">Tokenize 后的数据：训练输入、推理输入与数据分析</text>
+<rect x="180" y="95" width="740" height="85" rx="12" fill="#dbeafe" stroke="#cbd5e1"/>
+<text x="550.0" y="128" text-anchor="middle" font-size="21" fill="#0f172a" font-weight="700">原始 JSONL / Parquet</text>
+<text x="550.0" y="159" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">大量文本与稳定记录 ID</text>
+<rect x="180" y="220" width="740" height="85" rx="12" fill="#e0e7ff" stroke="#cbd5e1"/>
+<text x="550.0" y="253" text-anchor="middle" font-size="21" fill="#0f172a" font-weight="700">Ray Data 分布式处理</text>
+<text x="550.0" y="284" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">清洗 → 过滤 → Tokenize</text>
+<rect x="180" y="345" width="740" height="85" rx="12" fill="#dcfce7" stroke="#cbd5e1"/>
+<text x="550.0" y="378" text-anchor="middle" font-size="21" fill="#0f172a" font-weight="700">Token ID 与长度信息</text>
+<text x="550.0" y="409" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">input_ids / attention_mask；labels 按训练任务构造</text>
+<path d="M550 180V215" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<path d="M550 305V340" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="495" width="300" height="95" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="190.0" y="528" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">Pretrain / SFT</text>
+<text x="190.0" y="559" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">Packing、Label → 训练</text>
+<path d="M550 430V460H190V490" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="400" y="495" width="300" height="95" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="550.0" y="528" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">Inference</text>
+<text x="550.0" y="559" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">输入 ID → Prefill / Decode</text>
+<path d="M550 430V460H550V490" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<rect x="760" y="495" width="300" height="95" rx="12" fill="#fff" stroke="#cbd5e1"/>
+<text x="910.0" y="528" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">分析与预处理</text>
+<text x="910.0" y="559" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">长度、过滤、分桶、质量检查</text>
+<path d="M550 430V460H910V490" stroke="#64748b" fill="none" stroke-width="2" marker-end="url(#a)"/>
+<text x="550" y="645" text-anchor="middle" font-size="18" fill="#475569" font-weight="400">按用途选择是否持久化；推理可由集成处理器或引擎完成 Tokenize。</text>
+<text x="550" y="678" text-anchor="middle" font-size="17" fill="#64748b" font-weight="400">分支为用途示意，不要求同一份 Token 数据同时适用于所有模型与任务。</text>
+</g></svg>

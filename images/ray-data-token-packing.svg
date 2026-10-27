@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-label="Packing：把多个短样本组织成更长训练序列">
+<defs><marker id="a" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#64748b"/></marker></defs>
+<rect width="1100" height="560" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">Packing：把多个短样本组织成更长训练序列</text>
+<text x="550" y="90" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">示意：序列上限 2,048 Token，短样本约 200 Token；不代表所有训练都固定 Padding。</text>
+<text x="550" y="145" text-anchor="middle" font-size="21" fill="#0f172a" font-weight="700">单条样本 Padding：约 9.8% 为有效 Token</text>
+<rect x="50" y="170" width="98" height="65" fill="#60a5fa"/><rect x="148" y="170" width="902" height="65" fill="#e2e8f0"/>
+<text x="99" y="209" text-anchor="middle" font-size="18" fill="#1e3a8a" font-weight="700">200</text>
+<text x="599" y="209" text-anchor="middle" font-size="20" fill="#475569" font-weight="400">Padding：1,848 Token</text>
+<text x="550" y="300" text-anchor="middle" font-size="21" fill="#0f172a" font-weight="700">Packing：多条短样本共用一个序列</text>
+<rect x="50" y="325" width="91" height="65" rx="4" fill="#93c5fd"/>
+<text x="95.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">1</text>
+<rect x="145" y="325" width="91" height="65" rx="4" fill="#86efac"/>
+<text x="190.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">2</text>
+<rect x="240" y="325" width="91" height="65" rx="4" fill="#93c5fd"/>
+<text x="285.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">3</text>
+<rect x="335" y="325" width="91" height="65" rx="4" fill="#86efac"/>
+<text x="380.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">4</text>
+<rect x="430" y="325" width="91" height="65" rx="4" fill="#93c5fd"/>
+<text x="475.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">5</text>
+<rect x="525" y="325" width="91" height="65" rx="4" fill="#86efac"/>
+<text x="570.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">6</text>
+<rect x="620" y="325" width="91" height="65" rx="4" fill="#93c5fd"/>
+<text x="665.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">7</text>
+<rect x="715" y="325" width="91" height="65" rx="4" fill="#86efac"/>
+<text x="760.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">8</text>
+<rect x="810" y="325" width="91" height="65" rx="4" fill="#93c5fd"/>
+<text x="855.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">9</text>
+<rect x="905" y="325" width="91" height="65" rx="4" fill="#86efac"/>
+<text x="950.5" y="364" text-anchor="middle" font-size="20" fill="#0f172a" font-weight="700">10</text>
+<rect x="1000" y="325" width="50" height="65" fill="#fed7aa"/>
+<text x="550" y="430" text-anchor="middle" font-size="17" fill="#475569" font-weight="400">样本长度、分隔符与剩余空间仅作示意；需明确 EOS、边界、Attention 与 Label Mask。</text>
+<rect x="60" y="465" width="980" height="65" rx="12" fill="#ffedd5" stroke="#cbd5e1"/>
+<text x="550.0" y="498" text-anchor="middle" font-size="21" fill="#0f172a" font-weight="700">减少 Padding 的同时，必须保持正确的训练语义。</text>
+</g></svg>
