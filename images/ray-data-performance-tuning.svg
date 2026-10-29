@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760" role="img" aria-label="Ray Data 性能优化的五个方向：转换、读取、内存、执行资源、可复现性">
+<rect width="1100" height="760" rx="18" fill="#f8fafc"/>
+<g font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<text x="40" y="50" font-size="27" font-weight="700" fill="#0f172a">性能优化：按瓶颈调参，再用相同工作负载验证</text>
+<g stroke="#cbd5e1">
+<rect x="45" y="90" width="1010" height="90" rx="12" fill="#dbeafe"/>
+<rect x="45" y="205" width="1010" height="90" rx="12" fill="#e0e7ff"/>
+<rect x="45" y="320" width="1010" height="90" rx="12" fill="#dcfce7"/>
+<rect x="45" y="435" width="1010" height="90" rx="12" fill="#fef3c7"/>
+<rect x="45" y="550" width="1010" height="90" rx="12" fill="#ffedd5"/>
+</g>
+<g font-size="22" font-weight="700" fill="#0f172a">
+<text x="70" y="126">① 转换</text><text x="70" y="241">② 读取</text><text x="70" y="356">③ 内存</text><text x="70" y="471">④ 执行资源</text><text x="70" y="586">⑤ 可复现性</text>
+</g>
+<g font-size="19" fill="#475569">
+<text x="245" y="126">批量向量化 · 评估 Polars 排序</text><text x="245" y="156">避免把 Python 循环换个批处理外壳就期待加速</text>
+<text x="245" y="241">Block 数 · 文件布局 · CPU 请求 · Parquet 列裁剪</text><text x="245" y="271">在读取并行度、算子融合和中间物化之间权衡</text>
+<text x="245" y="356">缩小工作集 · 减少无谓溢写 · 合并过小的块</text><text x="245" y="386">块过大与过小都有代价；Batch 大小不等于输出 Block 大小</text>
+<text x="245" y="471">CPU / GPU / Object Store 执行预算</text><text x="245" y="501">兼顾共享集群使用率；预算不是操作系统硬限额</text>
+<text x="245" y="586">按需 preserve_order，另行固定随机性与业务顺序</text><text x="245" y="616">保序可能降低吞吐，也不等于完整的确定性保证</text>
+</g>
+<text x="550" y="705" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">验证：总耗时 / 有效吞吐 / 内存峰值 / Spilling / 任务与块分布</text>
+</g>
+</svg>

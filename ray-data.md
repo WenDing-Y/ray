@@ -1810,3 +1810,155 @@ Ray 不会凭空提供 4 张 GPU，也不会自动把每个 Actor 改成半张 G
 即使调度成功，也可能发生 CUDA OOM。`num_gpus` 控制逻辑资源分配，不是显存硬隔离；小数 GPU 请求也不会自动为模型建立显存分区。
 
 **池大小决定多少实例并行，`num_gpus` 决定每个实例申请多少 GPU，`batch_size` 决定每次处理多少记录。** 三者共同影响吞吐、显存和资源利用率；模型输入长度、输出长度及引擎内部并发同样需要评估。
+
+## 第十四题：如何按官方指南优化 Ray Data 性能？
+
+参考：[Advanced: Performance Tips and Tuning](https://docs.ray.io/en/latest/data/performance-tips.html)（2026-10-29 阅读）。按原文的五个方向整理：**转换、读取、内存、执行资源和可复现性**。
+
+![Ray Data 性能优化的五个方向](images/ray-data-performance-tuning.svg)
+
+### 一、优化转换（Optimize transforms）
+
+#### 1. 用批量向量化减少 Python 开销
+
+NumPy、Pandas 等支持向量化时，优先使用 `map_batches()`。如果批次函数内部仍逐行循环，并不会自动获得向量化收益。
+
+```python
+import ray
+
+ray.init()
+ds = ray.data.from_items([{"score": 10.0}, {"score": 20.0}])
+
+# 对整列计算，避免逐行调用 Python 函数。
+result = ds.map_batches(
+    lambda batch: {"score": batch["score"] * 2},
+    batch_format="numpy",
+    batch_size=2,
+)
+print(result.take_all())
+```
+
+#### 2. 对排序评估 Polars 实现
+
+```python
+ctx = ray.data.DataContext.get_current()
+ctx.use_polars_sort = True  # 在创建、执行相关流水线前设置；需安装 Polars。
+print(ds.sort("score").take_all())
+```
+
+该开关针对内部排序，可能改善 `sort()`、部分 `map_groups()` 等操作；不会让所有 `map_batches()` 自动加速。
+
+### 二、优化读取（Optimize reads）
+
+#### 1. 调整输出 Block 数，而不是只看 CPU 数
+
+`override_num_blocks` 影响读取计划和下游可用并行度。默认规划会综合最小块数、块大小目标及可用 CPU；指南列出的启发式包括初始 200 块、最小约 1 MiB、最大约 128 MiB，以及按可用 CPU 增加并行度。这些是规划规则和目标，受输入及版本影响，不是每次都产生固定数量的块。
+
+```python
+# 外部存储示例：需真实输入文件和访问权限。
+source = ray.data.read_parquet(
+    "s3://bucket/input/",
+    override_num_blocks=16,
+)
+```
+
+需要区分 **读取 Task 数、最终 Block 数和下游 Task 数**：
+
+- Read 与紧邻的 Map 可能融合，此时读取并行度也会影响转换并行度。
+- 实际输出过大时，一个 Task 可以拆出多个 Block，最终块数可能不同于请求值。
+- 文件数量、格式和读取器能力会限制并行读取，不能靠增大参数就拆开任意单文件读取。
+- 指南的单 CSV 示例中，一个读任务可先输出多个 Block，再供多个 Map Task 消费；这会阻止该 Read 与 Map 融合，增加中间物化。
+
+将块数调小、允许融合，可减少任务和中间传输开销；拆出更多块则可能提高下游并行度。应对照 `ds.stats()` 的实际物理计划选择，而不是固定追求融合或更多任务。
+
+#### 2. I/O 密集读取可降低每个任务的 CPU 请求
+
+```python
+# 每个读任务申请 0.25 个逻辑 CPU，允许更高的调度并发。
+source = ray.data.read_parquet("s3://bucket/input/", num_cpus=0.25)
+```
+
+这不限制操作系统的实际 CPU 使用，也不保证四倍吞吐。若瓶颈是解析、解压、存储带宽或内存，增加并发可能无效或产生竞争。
+
+#### 3. Parquet 只读取需要的列
+
+```python
+# 在扫描时裁剪列，减少 I/O 和内存，而不是读完再丢弃大字段。
+source = ray.data.read_parquet(
+    "s3://bucket/input/",
+    columns=["id", "text"],
+)
+```
+
+优化器也可能把紧邻读取的 `select_columns()` 下推；显式传入 `columns` 更直接，复杂 UDF 之后的投影不能假定仍可下推。
+
+### 三、减少内存开销（Reduce memory usage）
+
+#### 1. 降低工作集，减少不必要的 Spilling
+
+流式执行仍可能因中间工作集过大而溢写。先检查每个任务读入和输出的数据量、并发与对象保留情况；必要时增加读取分块，使单任务处理更少数据。
+
+全局交换或显式 `materialize()` 在数据超过对象存储容量时，出现 Spilling 可能是预期行为。溢写会增加磁盘 I/O，严重时耗尽磁盘；不能只靠加大 Object Store 解决所有问题。
+
+#### 2. 避免 Block 过小
+
+大量小块会增加调度和元数据开销。通过 `ds.stats()` 查看各算子的输出块大小。指南建议避免低于约 1 MB 的小块，并在合适负载下考虑更大的块；这不是要求所有任务都强行使用超过 100 MB 的块，仍需考虑单任务峰值和长尾。
+
+```python
+# 固定块数：可能引入协调与物化成本，按实际执行计划评估。
+fixed = ray.data.range(10, override_num_blocks=10).repartition(1)
+print(fixed.materialize().stats())
+
+# 不要求精确块数：通过较大输入批次合并小块，维持流式处理。
+coalesced = ray.data.range(10, override_num_blocks=10).map_batches(
+    lambda batch: batch,
+    batch_size=10,
+)
+print(coalesced.materialize().stats())
+```
+
+这里用小数据展示机制。`batch_size` 控制用户函数的输入批次和相关组合行为，**不保证最终输出 Block 恰好具有相同行数或字节数**。
+
+### 四、配置执行资源（Configure execution）
+
+多 Job 共用集群、为训练供数或需要控制中间工作集时，可以设置流水线预算：
+
+```python
+ctx = ray.data.DataContext.get_current()
+# 示例值，必须按集群可用容量与业务预算调整。
+ctx.execution_options.resource_limits = ctx.execution_options.resource_limits.copy(
+    cpu=4,
+    gpu=0,
+    object_store_memory=2 * 1024**3,
+)
+# 随后创建并执行需要使用此预算的 Dataset。
+```
+
+预算参与 Ray Data 的执行控制，不是 Kubernetes 内存硬限制，也不会创建额外资源。默认预算及对象存储占比可能随版本变化，应检查实际 Context 与运行指标，不要依赖网页中的固定比例。
+
+### 五、可复现性与吞吐的取舍（Reproducibility）
+
+```python
+ctx = ray.data.DataContext.get_current()
+ctx.execution_options.preserve_order = True
+```
+
+保留处理过程的 Block 顺序可能带来等待，降低吞吐；无顺序要求时不必为了“稳定”而开启。
+
+保序不等于所有结果都确定：读取文件顺序、随机种子、UDF、模型和并行计算仍需单独控制。需要按业务字段排序时，应显式使用 `sort()`。
+
+### 六、调参速查
+
+| 现象 | 优先调整 | 需要权衡 |
+| --- | --- | --- |
+| Python 逐行计算开销大 | 向量化 `map_batches()` | 批次格式转换与临时内存 |
+| 排序较慢 | 评估 Polars 排序 | 对应依赖与实际数据类型 |
+| 下游空闲、读取并行度低 | 检查文件布局和读取块数 | 融合、任务数与中间物化 |
+| I/O 等待较多且 CPU 有余量 | 降低读任务 CPU 请求 | 解析竞争、连接数与内存 |
+| 读入无用大字段 | Parquet 列裁剪 | 能否下推到扫描 |
+| 溢写频繁 | 缩小单任务工作集、控制并发 | 不要反向制造大量小块 |
+| 小 Block 太多 | 合并小块或重分区 | 精确块数与流式执行的取舍 |
+| 多 Job 相互争抢 | 调整执行资源预算 | 资源利用率与隔离需求 |
+| 开启保序后变慢 | 确认顺序是否必要 | 可复现需求与吞吐 |
+
+在同一输入和可比资源下逐项调整，用总耗时、有效吞吐、Task 耗时、Block 分布、峰值内存和 Spilling 验证收益。表中的排查顺序是实践整理，具体参数应以所用 Ray 版本为准。
